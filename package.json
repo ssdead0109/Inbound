@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -k -n \"BACKEND,FRONTEND\" -c \"blue.bold,green.bold\" \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "tsx watch server/src/index.ts",
-    "dev:client": "vite --port=3000 --host=0.0.0.0",
+    "dev:client": "vite --port=3005 --host=0.0.0.0",
     "start": "tsx server/src/index.ts",
     "server": "tsx server/src/index.ts",
     "build": "vite build",
