@@ -86,39 +86,41 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
   });
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
+    <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans text-slate-900">
       
-      {/* Background Decorative Gradients */}
-      <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-emerald-600/15 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/10 rounded-full blur-[100px] pointer-events-none" />
+      {/* Background Decorative Accents */}
+      <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-200/50 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-emerald-200/40 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-100/60 rounded-full blur-[120px] pointer-events-none" />
 
-      {/* Main Login Card */}
-      <div className="w-full max-w-md bg-slate-900/90 backdrop-blur-2xl border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative z-10">
+      {/* Main Login Card (Crisp Light Theme) */}
+      <div className="w-full max-w-md bg-white/95 backdrop-blur-xl border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6 relative z-10">
         
         {/* Header Branding */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/30 mb-1">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200 mb-1">
             <ShieldCheck className="w-8 h-8" />
           </div>
 
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-[11px] text-emerald-400 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>MSSQL System9 실시간 연동</span>
-          </div>
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-700 font-bold mb-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>사내 ERP (System9) 실시간 연동</span>
+            </div>
 
-          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-            KCP 자재입고 시스템
-          </h1>
-          <p className="text-xs text-slate-400">
-            사내 ERP <span className="text-indigo-400 font-semibold font-mono">MT_TC_담당자코드</span> 계정으로 로그인하세요
-          </p>
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              KCP 자재입고 시스템
+            </h1>
+            <p className="text-xs text-slate-500 mt-1">
+              사내 ERP <span className="text-indigo-600 font-bold font-mono">MT_TC_담당자코드</span> 계정으로 로그인하세요
+            </p>
+          </div>
         </div>
 
         {/* Error Feedback */}
         {errorMessage && (
-          <div className="flex items-center space-x-2 bg-rose-950/60 border border-rose-800/80 text-rose-300 p-3.5 rounded-2xl text-xs font-semibold animate-shake">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+          <div className="flex items-center space-x-2 bg-rose-50 border border-rose-200 text-rose-700 p-3.5 rounded-2xl text-xs font-semibold animate-shake">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
         )}
@@ -129,15 +131,15 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
           {/* Manager Code (ID) Input */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-indigo-400" />
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-indigo-600" />
                 <span>담당자코드 / 사번</span>
               </label>
               
               <button
                 type="button"
                 onClick={() => setShowQuickSelect(!showQuickSelect)}
-                className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer"
+                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
               >
                 <Users className="w-3.5 h-3.5" />
                 <span>{showQuickSelect ? '직접 입력하기' : '사원 목록에서 선택'}</span>
@@ -151,14 +153,14 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="예: jmgang, admin, 박영일"
                 autoFocus
-                className="w-full bg-slate-950/70 text-white placeholder-slate-500 px-4 py-3 rounded-2xl border border-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium transition-all"
+                className="w-full bg-slate-50 text-slate-900 placeholder-slate-400 px-4 py-3 rounded-2xl border border-slate-300 focus:bg-white focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 text-sm font-medium transition-all"
               />
             </div>
           </div>
 
-          {/* Quick Select Accordion/Popup */}
+          {/* Quick Select Accordion */}
           {showQuickSelect && (
-            <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3 space-y-2 max-h-56 overflow-y-auto">
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2 max-h-56 overflow-y-auto shadow-inner">
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -166,7 +168,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
                   value={userSearchTerm}
                   onChange={(e) => setUserSearchTerm(e.target.value)}
                   placeholder="사원명, 부서, 사번 검색..."
-                  className="w-full pl-8 pr-3 py-1.5 bg-slate-900 text-xs text-white rounded-xl border border-slate-700 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full pl-8 pr-3 py-1.5 bg-white text-xs text-slate-900 rounded-xl border border-slate-300 placeholder-slate-400 focus:outline-none focus:border-indigo-600"
                 />
               </div>
 
@@ -176,19 +178,19 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
                     key={u.code}
                     type="button"
                     onClick={() => handleSelectQuickUser(u)}
-                    className="p-2 rounded-xl bg-slate-900 hover:bg-indigo-950/50 hover:border-indigo-500/50 border border-slate-800 text-left transition-all cursor-pointer group"
+                    className="p-2.5 rounded-xl bg-white hover:bg-indigo-50 hover:border-indigo-300 border border-slate-200 text-left transition-all cursor-pointer group shadow-2xs"
                   >
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-200 group-hover:text-white">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-900 group-hover:text-indigo-600">
                       <span>{u.name}</span>
                       {u.isAdmin ? (
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">관리자</span>
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-amber-100 text-amber-800 font-bold">관리자</span>
                       ) : (
-                        <span className="text-[9px] text-slate-500">{u.dept || '자재'}</span>
+                        <span className="text-[9px] text-slate-500 font-normal">{u.dept || '자재'}</span>
                       )}
                     </div>
-                    <div className="text-[10px] text-slate-400 font-mono flex items-center justify-between mt-0.5">
+                    <div className="text-[10px] text-slate-500 font-mono flex items-center justify-between mt-1">
                       <span>{u.code}</span>
-                      {!u.hasPassword && <span className="text-emerald-400 font-sans text-[9px]">즉시로그인</span>}
+                      {!u.hasPassword && <span className="text-emerald-600 font-sans text-[9px] font-bold">즉시로그인</span>}
                     </div>
                   </button>
                 ))}
@@ -198,8 +200,8 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
 
           {/* Password Input */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <Lock className="w-3.5 h-3.5 text-indigo-400" />
+            <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5 text-indigo-600" />
               <span>비밀번호 (패스워드)</span>
             </label>
             <div className="relative">
@@ -208,7 +210,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="비밀번호 입력 (미설정 시 비워두기)"
-                className="w-full bg-slate-950/70 text-white placeholder-slate-500 px-4 py-3 rounded-2xl border border-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium transition-all"
+                className="w-full bg-slate-50 text-slate-900 placeholder-slate-400 px-4 py-3 rounded-2xl border border-slate-300 focus:bg-white focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 text-sm font-medium transition-all"
               />
             </div>
           </div>
@@ -217,7 +219,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-600 text-white text-sm font-bold rounded-2xl transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50 mt-2"
+            className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-2xl transition-all shadow-lg shadow-indigo-200 flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50 mt-2"
           >
             {isLoading ? (
               <span className="inline-flex items-center gap-2">
@@ -234,7 +236,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
         </form>
 
         {/* Quick Demo Credentials Footer */}
-        <div className="pt-2 border-t border-slate-800/80 space-y-2">
+        <div className="pt-3 border-t border-slate-100 space-y-2">
           <div className="text-[11px] text-slate-500 text-center font-medium">
             💡 빠른 테스트 추천 계정:
           </div>
@@ -242,21 +244,21 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
             <button
               type="button"
               onClick={() => { setCode('jmgang'); setPassword('kcp4800175'); }}
-              className="px-2.5 py-1 rounded-xl bg-slate-800/70 hover:bg-slate-800 text-[10px] text-slate-300 font-mono border border-slate-700 transition-all cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-[10px] text-slate-700 font-mono border border-slate-200 transition-all cursor-pointer"
             >
               특장: <strong>jmgang</strong> (강종만)
             </button>
             <button
               type="button"
               onClick={() => { setCode('admin'); setPassword('gong2004pass'); }}
-              className="px-2.5 py-1 rounded-xl bg-slate-800/70 hover:bg-slate-800 text-[10px] text-slate-300 font-mono border border-slate-700 transition-all cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-[10px] text-slate-700 font-mono border border-slate-200 transition-all cursor-pointer"
             >
               관리자: <strong>admin</strong> (개발자)
             </button>
             <button
               type="button"
               onClick={() => { setCode('rkdtjrrb1'); setPassword(''); }}
-              className="px-2.5 py-1 rounded-xl bg-slate-800/70 hover:bg-slate-800 text-[10px] text-slate-300 font-mono border border-slate-700 transition-all cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-[10px] text-slate-700 font-mono border border-slate-200 transition-all cursor-pointer"
             >
               자재: <strong>rkdtjrrb1</strong> (강석규)
             </button>
@@ -266,7 +268,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
       </div>
 
       {/* Footer copyright */}
-      <div className="mt-6 text-center text-xs text-slate-600">
+      <div className="mt-6 text-center text-xs text-slate-500 font-medium">
         © 2026 KCP HEAVY INDUSTRIES CO., LTD. SmartRack Inbound System
       </div>
 
