@@ -10,7 +10,8 @@ import {
   Database,
   RefreshCw,
   Tag,
-  CheckCircle2
+  CheckCircle2,
+  Printer
 } from 'lucide-react';
 import { InboundSlip } from '../../types/inbound';
 import { fetchErpPendingSlips } from '../../api/erpApi';
@@ -19,12 +20,14 @@ interface InboundPendingListProps {
   slips: InboundSlip[];
   onSelectSlip: (slipNo: string, erpSlip?: InboundSlip) => void;
   onOpenScanner: () => void;
+  onOpenPrintModal?: (slip: InboundSlip) => void;
 }
 
 export const InboundPendingList: React.FC<InboundPendingListProps> = ({
   slips,
   onSelectSlip,
   onOpenScanner,
+  onOpenPrintModal,
 }) => {
   // Mode: 'LOCAL' vs 'ERP'
   const [sourceMode, setSourceMode] = useState<'LOCAL' | 'ERP'>('ERP');
@@ -225,9 +228,24 @@ export const InboundPendingList: React.FC<InboundPendingListProps> = ({
                       </span>
                     </div>
 
-                    <span className="px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                      검수대기
-                    </span>
+                    <div className="flex items-center space-x-1.5">
+                      {onOpenPrintModal && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenPrintModal(slip);
+                          }}
+                          className="p-1 rounded-lg bg-slate-50 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 transition-all cursor-pointer shadow-2xs"
+                          title="입하증(MMB202_Print) 미리보기 및 인쇄"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <span className="px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                        검수대기
+                      </span>
+                    </div>
                   </div>
 
                   {/* Supplier & Delivery Date */}

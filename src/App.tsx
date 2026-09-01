@@ -385,6 +385,7 @@ export default function App() {
             slips={slips}
             onSelectSlip={handleSelectPendingSlip}
             onOpenScanner={() => setCurrentTab('SCANNER')}
+            onOpenPrintModal={handleOpenPrintModal}
           />
         )}
 

@@ -149,6 +149,36 @@ export async function fetchErpSlipByNo(slipNo: string): Promise<InboundSlip> {
   return json.data;
 }
 
+export interface ErpPrintResponse {
+  success: boolean;
+  slip: InboundSlip;
+  rawRows: any[];
+  executedQuery: string;
+  source: 'MMB202_PRINT' | 'FALLBACK_PENDING' | 'LOCAL';
+  message: string;
+}
+
+/**
+ * 사내 ERP MMB202_Print 입하증 출력 데이터 조회
+ * EXEC MMB202_Print N'전표번호', 101, N'34661'
+ */
+export async function fetchErpPrintData(
+  slipNo: string,
+  companyCode: number = 101,
+  subCode: string = '34661'
+): Promise<ErpPrintResponse> {
+  const params = new URLSearchParams({
+    companyCode: companyCode.toString(),
+    subCode,
+  });
+  const res = await fetch(`${API_BASE}/inbound/print/${encodeURIComponent(slipNo.trim())}?${params.toString()}`);
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.error || json.message || 'ERP MMB202_Print 데이터 조회 실패');
+  }
+  return res.json();
+}
+
 /**
  * ERP MSSQL 실시간 입고 확정 및 MT_T_입출고 INSERT
  */

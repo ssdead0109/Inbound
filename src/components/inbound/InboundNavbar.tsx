@@ -55,17 +55,17 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16 gap-2">
           
-          {/* Logo & Brand Title: "KCP 자재입고" */}
+          {/* Logo & Brand Title: "KCP 자재관리(WMA)" */}
           <div
             className="flex items-center space-x-2.5 cursor-pointer shrink-0"
             onClick={() => onSelectTab('SCANNER')}
           >
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
-              <QrCode className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden shadow-xs shrink-0 border border-slate-200 bg-white p-0.5">
+              <img src="/wma-icon.png" alt="WMA" className="w-full h-full object-contain rounded-lg" />
             </div>
             <div className="flex items-center space-x-1.5">
               <span className="font-black text-base sm:text-lg tracking-tight text-slate-900 whitespace-nowrap">
-                KCP <span className="text-indigo-600 font-bold ml-1">자재입고</span>
+                KCP <span className="text-indigo-600 font-bold ml-1">자재관리(WMA)</span>
               </span>
             </div>
           </div>

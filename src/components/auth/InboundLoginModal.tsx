@@ -104,8 +104,8 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
         
         {/* Header Branding & ERP Status Badge */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200 mb-1">
-            <ShieldCheck className="w-8 h-8" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl overflow-hidden shadow-lg shadow-indigo-100 mb-1 border border-slate-200 bg-white p-1">
+            <img src="/wma-icon.png" alt="KCP WMA" className="w-full h-full object-contain rounded-xl" />
           </div>
 
           <div>
@@ -132,7 +132,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
             )}
 
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              KCP 자재입고 시스템
+              KCP 자재관리시스템 (WMA)
             </h1>
             <p className="text-xs text-slate-500 mt-1 font-medium">
               사내 ERP 계정(ID / 비밀번호)으로 로그인하세요

@@ -1,22 +1,29 @@
 {
-  "name": "KCP QR 자재 입고 시스템",
-  "short_name": "KCP 입고",
-  "description": "QR코드 기반 납품확인서 실시간 검수 및 입고처리 시스템",
+  "name": "KCP 자재관리시스템 (WMA)",
+  "short_name": "KCP WMA",
+  "description": "KCP 자재관리시스템 (Warehouse Material Application) 모바일 검수 및 입고 시스템",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "background_color": "#f8fafc",
+  "theme_color": "#1e1b4b",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/vite.svg",
-      "sizes": "192x192",
-      "type": "image/svg+xml"
+      "src": "/wma-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
-      "src": "/vite.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml"
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "64x64",
+      "type": "image/png"
     }
   ]
 }

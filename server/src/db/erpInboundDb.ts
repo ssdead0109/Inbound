@@ -408,3 +408,125 @@ export async function processErpInboundReceive(payload: InboundReceivePayload): 
     message: `ERP MSSQL MT_T_입출고 테이블에 ${insertedCount}건의 입고 레코드가 성공적으로 등록되었습니다!`,
   };
 }
+
+export interface ErpPrintResult {
+  success: boolean;
+  slip: InboundSlip;
+  rawRows: any[];
+  executedQuery: string;
+  source: 'MMB202_PRINT' | 'FALLBACK_PENDING' | 'LOCAL';
+  message: string;
+}
+
+/**
+ * 사내 ERP 입하증 출력 전용 Stored Procedure (MMB202_Print) 호출 및 정규화
+ * SQL 실행: EXEC MMB202_Print N'260803012', 101, N'34661'
+ */
+export async function getErpInboundPrintData(
+  slipNo: string,
+  companyCode: number = 101,
+  subCode: string = '34661'
+): Promise<ErpPrintResult> {
+  const cleanSlipNo = slipNo.trim();
+  const cleanSubCode = (subCode || '34661').trim();
+  const execSql = `EXEC MMB202_Print @cleanSlipNo, @companyCode, @cleanSubCode`;
+  const executedQueryStr = `EXEC MMB202_Print N'${cleanSlipNo}', ${companyCode}, N'${cleanSubCode}'`;
+
+  try {
+    const isConnected = await mssqlAdapter.connect();
+    if (isConnected) {
+      const rows = await mssqlAdapter.query<any>(execSql, {
+        cleanSlipNo,
+        companyCode,
+        cleanSubCode,
+      });
+
+      if (rows && rows.length > 0) {
+        const first = rows[0];
+        const supplierName =
+          first.거래처명 || first.cust_nm || first.CUST_NM || first.공급처명 || first.상호 || '사내 ERP 거래처';
+        const supplierCode = first.거래처코드 || first.cust_cd || first.CUST_CD || cleanSubCode;
+        const deliveryDate =
+          first.납기일자 || first.일자 || first.입하일자 || first.io_dt || first.IO_DT || new Date().toISOString().slice(0, 10);
+        const poNumber = first.발주번호 || first.po_no || first.PO_NO || cleanSlipNo;
+        const manager = first.담당자명 || first.emp_nm || first.EMP_NM || '자재과';
+
+        const items: InboundItem[] = rows.map((r, idx) => {
+          const itemCode = r.품목코드 || r.item_cd || r.ITEM_CD || `MAT-${idx + 1}`;
+          const itemName = r.품목명 || r.item_nm || r.ITEM_NM || '품목';
+          const spec = r.규격 || r.규격명 || r.spec || r.SPEC || '';
+          const unit = r.최소단위 || r.단위 || r.unit || r.UNIT || 'EA';
+          const orderQty = Number(r.발주수량 || r.PO_QTY || r.po_qty || r.수량 || r.qty || r.QTY || 1);
+          const receivedQty = Number(r.입고수량 || r.입하수량 || r.in_qty || r.IN_QTY || r.수량 || r.qty || orderQty);
+          const unitPrice = Number(r.단가 || r.danga || r.DANGA || r.price || r.PRICE || 0);
+          const warehouse = r.창고명 || r.wh_nm || r.WH_NM || '특장자재창고';
+
+          return {
+            id: `erp-print-item-${cleanSlipNo}-${idx + 1}`,
+            itemCode: String(itemCode).trim(),
+            itemName: String(itemName).trim(),
+            spec: String(spec).trim(),
+            unit: String(unit).trim(),
+            orderQty,
+            receivedQty,
+            defectQty: 0,
+            warehouse: String(warehouse).trim(),
+            unitPrice,
+            status: 'WAITING' as const,
+            barcode: r.바코드 || r.barcode || `${String(itemCode).trim()}-${receivedQty}`,
+            notes: r.비고 || r.rmks || r.RMKS || '',
+          };
+        });
+
+        const totalOrderedQty = items.reduce((sum, it) => sum + it.orderQty, 0);
+        const totalReceivedQty = items.reduce((sum, it) => sum + it.receivedQty, 0);
+
+        const slip: InboundSlip = {
+          slipNo: cleanSlipNo,
+          supplierCode: String(supplierCode).trim(),
+          supplierName: String(supplierName).trim(),
+          poNumber: String(poNumber).trim(),
+          deliveryDate: String(deliveryDate).includes('/')
+            ? `20${String(deliveryDate).replace(/\//g, '-')}`
+            : String(deliveryDate),
+          status: 'COMPLETED',
+          totalItems: items.length,
+          totalOrderedQty,
+          totalReceivedQty,
+          totalDefectQty: 0,
+          manager: String(manager).trim(),
+          memo: `ERP MMB202_Print 연동 입하증 (회사: ${companyCode}, 거래처: ${cleanSubCode})`,
+          items,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        return {
+          success: true,
+          slip,
+          rawRows: rows,
+          executedQuery: executedQueryStr,
+          source: 'MMB202_PRINT',
+          message: `ERP MMB202_Print 프로시저로부터 ${rows.length}건의 입하증 품목 데이터를 성공적으로 조회했습니다.`,
+        };
+      }
+    }
+  } catch (spErr: any) {
+    console.warn(`[MMB202_Print SP execution warning: ${spErr.message}], falling back to pending table or local slip.`);
+  }
+
+  // Fallback: search 미입고현황 or constructed slip
+  const fallbackSlip = await getErpSlipByNo(cleanSlipNo);
+  if (fallbackSlip) {
+    return {
+      success: true,
+      slip: fallbackSlip,
+      rawRows: [],
+      executedQuery: executedQueryStr,
+      source: 'FALLBACK_PENDING',
+      message: 'MMB202_Print 프로시저 연결 또는 실행이 지연되어 사내 미입고현황 데이터로 대체 조회되었습니다.',
+    };
+  }
+
+  throw new Error(`전표 [${cleanSlipNo}]에 대한 입하증 데이터를 사내 ERP(MMB202_Print)에서 찾을 수 없습니다.`);
+}

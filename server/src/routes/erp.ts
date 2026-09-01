@@ -369,6 +369,49 @@ router.post('/inbound/receive', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/erp/inbound/print/:slipNo - 사내 ERP MMB202_Print 입하증 출력 데이터 조회
+router.get('/inbound/print/:slipNo', async (req: Request, res: Response) => {
+  try {
+    const { getErpInboundPrintData } = await import('../db/erpInboundDb');
+    const { slipNo } = req.params;
+    const companyCode = parseInt((req.query.companyCode as string) || '101', 10);
+    const subCode = (req.query.subCode as string) || '34661';
+
+    const printResult = await getErpInboundPrintData(slipNo, companyCode, subCode);
+    res.json(printResult);
+  } catch (err: any) {
+    console.error('[ERP Inbound Print Error]', err);
+    res.status(500).json({
+      success: false,
+      error: err.message || 'ERP 입하증 출력 데이터 조회 실패',
+    });
+  }
+});
+
+// POST /api/erp/inbound/print - 사내 ERP MMB202_Print 커스텀 파라미터 실행
+router.post('/inbound/print', async (req: Request, res: Response) => {
+  try {
+    const { getErpInboundPrintData } = await import('../db/erpInboundDb');
+    const { slipNo, companyCode, subCode } = req.body;
+    if (!slipNo) {
+      return res.status(400).json({ success: false, message: '전표번호(slipNo)는 필수입니다.' });
+    }
+
+    const printResult = await getErpInboundPrintData(
+      slipNo,
+      companyCode ? parseInt(companyCode, 10) : 101,
+      subCode || '34661'
+    );
+    res.json(printResult);
+  } catch (err: any) {
+    console.error('[ERP Inbound Print Execute Error]', err);
+    res.status(500).json({
+      success: false,
+      error: err.message || 'ERP 입하증 출력 프로시저 실행 실패',
+    });
+  }
+});
+
 // POST /api/erp/auth/login - 사내 ERP 담당자코드 & 패스워드 로그인 인증
 router.post('/auth/login', async (req: Request, res: Response) => {
   try {
