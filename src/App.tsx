@@ -23,12 +23,14 @@ import { InboundHistoryView } from './components/inbound/InboundHistoryView';
 import { InboundSimulatorModal } from './components/inbound/InboundSimulatorModal';
 import { InboundSlipPrintModal } from './components/inbound/InboundSlipPrintModal';
 import { ErpMaterialSearchView } from './components/erp/ErpMaterialSearchView';
+import { InboundPurchaseOrderView } from './components/inbound/InboundPurchaseOrderView';
 import { InboundLoginModal } from './components/auth/InboundLoginModal';
 import { ErpUser } from './api/erpApi';
 
 import {
   ClipboardCheck,
   History,
+  FileText,
   CheckCircle2,
   AlertCircle,
   Database
@@ -357,7 +359,7 @@ export default function App() {
       />
 
       {/* Main Workspace Body */}
-      <main className="flex-1 pb-32 md:pb-8 w-full max-w-full overflow-x-hidden">
+      <main className="flex-1 pb-32 md:pb-8 w-full max-w-full">
         {currentTab === 'SCANNER' && (
           <InboundScanner
             onScanSuccess={handleScanSuccess}
@@ -394,6 +396,10 @@ export default function App() {
           />
         )}
 
+        {currentTab === 'PURCHASE_ORDERS' && (
+          <InboundPurchaseOrderView onShowToast={showToast} />
+        )}
+
         {currentTab === 'ERP_SEARCH' && (
           <ErpMaterialSearchView onShowToast={showToast} />
         )}
@@ -402,19 +408,19 @@ export default function App() {
       {/* Mobile Bottom Navigation Bar with Safe Area Inset Support */}
       <div
         style={{ paddingBottom: 'max(20px, calc(0.6rem + env(safe-area-inset-bottom, 20px)))' }}
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 pt-2 px-4 flex items-center justify-around text-[10px] font-bold text-slate-500 shadow-2xl"
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 pt-2 px-2.5 flex items-center justify-around text-[10px] font-bold text-slate-500 shadow-2xl"
       >
         <button
           type="button"
           onClick={() => setCurrentTab('SCANNER')}
-          className={`flex flex-col items-center justify-center space-y-1 transition-all relative cursor-pointer py-1.5 px-4 rounded-xl min-h-[46px] ${
+          className={`flex flex-col items-center justify-center space-y-1 transition-all relative cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
             currentTab === 'SCANNER' || currentTab === 'PENDING' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
           }`}
         >
           <ClipboardCheck className="w-5 h-5" />
           <span>입고확인</span>
           {pendingCount > 0 && (
-            <span className="absolute top-0.5 right-2 w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-mono font-bold shadow-xs">
+            <span className="absolute top-0.5 right-1 w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-mono font-bold shadow-xs">
               {pendingCount}
             </span>
           )}
@@ -423,7 +429,7 @@ export default function App() {
         <button
           type="button"
           onClick={() => setCurrentTab('HISTORY')}
-          className={`flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer py-1.5 px-4 rounded-xl min-h-[46px] ${
+          className={`flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
             currentTab === 'HISTORY' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
           }`}
         >
@@ -433,8 +439,19 @@ export default function App() {
 
         <button
           type="button"
+          onClick={() => setCurrentTab('PURCHASE_ORDERS')}
+          className={`flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
+            currentTab === 'PURCHASE_ORDERS' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
+          }`}
+        >
+          <FileText className="w-5 h-5 text-blue-500" />
+          <span>발주 조회</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setCurrentTab('ERP_SEARCH')}
-          className={`flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer py-1.5 px-4 rounded-xl min-h-[46px] ${
+          className={`flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
             currentTab === 'ERP_SEARCH' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
           }`}
         >

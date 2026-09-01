@@ -474,6 +474,75 @@ router.get('/inbound/slips/:slipNo', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/erp/purchase-orders - ERP 'MMB100 + MMB150' 실시간 발주 내역 조회
+router.get('/purchase-orders', async (req: Request, res: Response) => {
+  try {
+    const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim().toUpperCase() : 'ALL';
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '150', 10), 1), 500);
+
+    const isConnected = await mssqlAdapter.connect();
+    if (!isConnected) {
+      return res.status(503).json({
+        success: false,
+        error: 'ERP MSSQL 데이터베이스에 연결할 수 없습니다.',
+      });
+    }
+
+    const likeQ = `%${query}%`;
+    const sql = `
+      SELECT TOP (${limit})
+        RTRIM(H.po_no) AS poNo,
+        CONVERT(VARCHAR(10), H.po_dt, 120) AS poDate,
+        CONVERT(VARCHAR(10), ISNULL(D.dlv_dt, H.dlv_dt), 120) AS deliveryDate,
+        RTRIM(H.cust_cd) AS supplierCode,
+        RTRIM(ISNULL(V.cust_nm, H.cust_cd)) AS supplierName,
+        RTRIM(ISNULL(W.wh_nm, '')) AS warehouseName,
+        RTRIM(ISNULL(M.itm_cd, '')) AS itemCode,
+        RTRIM(ISNULL(M.itm_nm, ISNULL(D.itm_dsc, ''))) AS itemName,
+        RTRIM(ISNULL(M.spec, ISNULL(D.spec_dsc, ''))) AS itemSpec,
+        RTRIM(ISNULL(M.um_bc, 'EA')) AS unit,
+        ISNULL(D.po_qty, 0) AS poQty,
+        ISNULL(D.in_qty, 0) AS receivedQty,
+        (ISNULL(D.po_qty, 0) - ISNULL(D.in_qty, 0)) AS remainQty,
+        ISNULL(D.po_up, 0) AS unitPrice,
+        ISNULL(D.po_amt, 0) AS totalAmount,
+        RTRIM(ISNULL(D.rmks, ISNULL(H.rmks, ''))) AS remarks,
+        CASE 
+          WHEN ISNULL(D.in_qty, 0) >= ISNULL(D.po_qty, 0) AND ISNULL(D.po_qty, 0) > 0 THEN 'COMPLETED'
+          WHEN ISNULL(D.in_qty, 0) > 0 THEN 'PARTIAL'
+          ELSE 'WAITING'
+        END AS status
+      FROM MMB100 H
+      INNER JOIN MMB150 D ON D.po_no = H.po_no
+      LEFT JOIN DMA100 M ON M.itm_id = D.itm_id
+      LEFT JOIN BCV100 V ON V.cust_cd = H.cust_cd
+      LEFT JOIN BCW100 W ON W.wh_cd = ISNULL(D.in_wh, H.in_wh)
+      WHERE (@query = '' 
+         OR H.po_no LIKE @likeQ 
+         OR V.cust_nm LIKE @likeQ 
+         OR M.itm_cd LIKE @likeQ 
+         OR M.itm_nm LIKE @likeQ
+         OR D.itm_dsc LIKE @likeQ)
+      ORDER BY H.po_dt DESC, H.po_no DESC, D.po_sq ASC
+    `;
+
+    const rawRows = await mssqlAdapter.query<any>(sql, { query, likeQ });
+    const filteredRows = status === 'ALL'
+      ? rawRows
+      : rawRows.filter(r => r.status === status);
+
+    res.json({
+      success: true,
+      count: filteredRows.length,
+      data: filteredRows,
+    });
+  } catch (err: any) {
+    console.error('[ERP Purchase Orders Error]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // POST /api/erp/inbound/receive - ERP 실시간 입고 확정 및 MT_T_입출고 INSERT
 router.post('/inbound/receive', async (req: Request, res: Response) => {
   try {

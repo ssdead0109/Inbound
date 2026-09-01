@@ -130,7 +130,7 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
   const totalReceivedCount = historySlips.reduce((acc, s) => acc + (s.totalReceivedQty || 0), 0);
 
   return (
-    <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 w-full overflow-x-hidden">
+    <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-3.5 w-full">
       
       {/* 1. Header Banner */}
       <div className="bg-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md border border-slate-800">
@@ -144,9 +144,6 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
                 <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
                   입고 완료 내역
                 </h1>
-                <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
-                  {historySlips.length}건
-                </span>
                 {onRefresh && (
                   <button
                     type="button"
@@ -158,9 +155,6 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
                   </button>
                 )}
               </div>
-              <p className="text-xs text-slate-300 mt-0.5">
-                총 실입고 수량: <strong className="text-white font-mono">{totalReceivedCount.toLocaleString()} EA</strong>
-              </p>
             </div>
           </div>
 
@@ -195,7 +189,10 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
       </div>
 
       {/* 2. Unified Sticky Search & Status Filter Bar */}
-      <div className="sticky top-14 sm:top-16 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs">
+      <div
+        style={{ top: 'var(--app-header-h, 56px)' }}
+        className="sticky z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs"
+      >
         <div className="flex flex-col sm:flex-row items-center gap-2 max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto">
           
           {/* Status Dropdown Listbox */}
@@ -205,9 +202,9 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
               onChange={(e) => setStatusFilter(e.target.value as any)}
               className="w-full h-11 sm:h-12 pl-3.5 pr-8 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer"
             >
-              <option value="ALL">📦 전체 상태 ({historySlips.length}건)</option>
-              <option value="COMPLETED">✅ 입고 완료 ({historySlips.filter(s => s.status === 'COMPLETED').length}건)</option>
-              <option value="PARTIAL">⚠️ 부분 입고 ({historySlips.filter(s => s.status === 'PARTIAL').length}건)</option>
+              <option value="ALL">📦 전체 상태</option>
+              <option value="COMPLETED">✅ 입고 완료</option>
+              <option value="PARTIAL">⚠️ 부분 입고</option>
             </select>
             <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>

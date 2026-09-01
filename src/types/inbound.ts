@@ -65,4 +65,4 @@ export interface InboundStats {
   totalDefectsToday: number;
 }
 
-export type InboundViewTab = 'SCANNER' | 'RECEIVING' | 'PENDING' | 'HISTORY' | 'ERP_SEARCH';
+export type InboundViewTab = 'SCANNER' | 'RECEIVING' | 'PENDING' | 'HISTORY' | 'PURCHASE_ORDERS' | 'ERP_SEARCH';

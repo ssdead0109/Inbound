@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ClipboardCheck,
   History,
+  FileText,
   User,
   Database,
   LogOut,
@@ -37,6 +38,19 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isNativeApp = Capacitor.isNativePlatform();
 
+  // Dynamically update --app-header-h CSS custom property so sticky search bars stick pixel-perfectly
+  useEffect(() => {
+    const updateHeaderHeight = () => {
+      const headerEl = document.getElementById('app-header');
+      if (headerEl) {
+        document.documentElement.style.setProperty('--app-header-h', `${headerEl.offsetHeight}px`);
+      }
+    };
+    updateHeaderHeight();
+    window.addEventListener('resize', updateHeaderHeight);
+    return () => window.removeEventListener('resize', updateHeaderHeight);
+  }, [isNativeApp]);
+
   const handleSaveCustomOp = (e: React.FormEvent) => {
     e.preventDefault();
     if (customOpInput.trim()) {
@@ -57,6 +71,7 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
 
   return (
     <header
+      id="app-header"
       className="sticky top-0 z-40 bg-white border-b border-slate-200 text-slate-900 select-none shadow-2xs w-full max-w-full"
       style={{
         paddingTop: isNativeApp ? 'max(env(safe-area-inset-top, 0px), 28px)' : 'env(safe-area-inset-top, 0px)',
@@ -80,11 +95,11 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
             </div>
           </div>
 
-          {/* Desktop Navigation Tabs: 입고확인, 입고 내역, ERP 자재조회 */}
+          {/* Desktop Navigation Tabs: 입고확인, 입고 내역, 발주 조회, ERP 자재조회 */}
           <nav className="hidden md:flex items-center space-x-1.5 bg-slate-100/90 p-1.5 rounded-xl border border-slate-200">
             <button
               onClick={() => onSelectTab('SCANNER')}
-              className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 currentTab === 'SCANNER'
                   ? 'bg-white text-indigo-600 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
@@ -101,7 +116,7 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
 
             <button
               onClick={() => onSelectTab('HISTORY')}
-              className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 currentTab === 'HISTORY'
                   ? 'bg-white text-indigo-600 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
@@ -112,8 +127,20 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
             </button>
 
             <button
+              onClick={() => onSelectTab('PURCHASE_ORDERS')}
+              className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                currentTab === 'PURCHASE_ORDERS'
+                  ? 'bg-white text-indigo-600 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              <FileText className="w-4 h-4 text-blue-500" />
+              <span>발주 조회</span>
+            </button>
+
+            <button
               onClick={() => onSelectTab('ERP_SEARCH')}
-              className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 currentTab === 'ERP_SEARCH'
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'

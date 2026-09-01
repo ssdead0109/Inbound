@@ -167,10 +167,13 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
   /* ------------------------------------------------------------- */
   if (selectedCode) {
     return (
-      <div className="max-w-full sm:max-w-5xl lg:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-4 w-full overflow-x-hidden">
+      <div className="max-w-full sm:max-w-5xl lg:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-4 w-full">
         
         {/* Sticky Top Header Bar (QR 라벨 인쇄 상단 고정) */}
-        <div className="sticky top-14 sm:top-16 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs">
+        <div
+          style={{ top: 'var(--app-header-h, 56px)' }}
+          className="sticky z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs"
+        >
           <div className="flex items-center justify-between gap-3 max-w-full sm:max-w-5xl lg:max-w-7xl mx-auto">
             
             {/* Back Button & Title */}
@@ -392,6 +395,8 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                         const isIn = hist.inQty > 0 || hist.type === '입고' || hist.type === '매입';
                         const isOut = hist.outQty > 0 || hist.type === '출고' || hist.type === '매출';
                         const qty = isIn ? hist.inQty || hist.totalQty : isOut ? hist.outQty || hist.totalQty : hist.totalQty;
+                        const mainType = hist.type || (isIn ? '입고' : '출고');
+                        const showSubType = hist.subType && hist.subType.trim() !== '' && hist.subType.trim() !== mainType.trim();
 
                         return (
                           <tr key={idx} className="hover:bg-indigo-50/30 transition-colors">
@@ -402,9 +407,9 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                 isIn ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                               }`}>
-                                {hist.type || (isIn ? '입고' : '출고')}
+                                {mainType}
                               </span>
-                              {hist.subType && (
+                              {showSubType && (
                                 <span className="block text-[10px] text-slate-400 mt-0.5 font-normal">
                                   {hist.subType}
                                 </span>
@@ -448,6 +453,8 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                       const isIn = hist.inQty > 0 || hist.type === '입고' || hist.type === '매입';
                       const isOut = hist.outQty > 0 || hist.type === '출고' || hist.type === '매출';
                       const qty = isIn ? hist.inQty || hist.totalQty : isOut ? hist.outQty || hist.totalQty : hist.totalQty;
+                      const mainType = hist.type || (isIn ? '입고' : '출고');
+                      const showSubType = hist.subType && hist.subType.trim() !== '' && hist.subType.trim() !== mainType.trim();
 
                       return (
                         <div key={idx} className="p-3 hover:bg-slate-50 transition-colors space-y-1">
@@ -459,7 +466,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                 isIn ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                               }`}>
-                                {hist.type || (isIn ? '입고' : '출고')} {hist.subType ? `· ${hist.subType}` : ''}
+                                {mainType}{showSubType ? ` · ${hist.subType}` : ''}
                               </span>
                             </div>
                             <div className="font-mono font-black text-sm">
@@ -618,7 +625,10 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
       </div>
 
       {/* 2. Unified Sticky Search & Warehouse Listbox Bar */}
-      <div className="sticky top-14 sm:top-16 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs">
+      <div
+        style={{ top: 'var(--app-header-h, 56px)' }}
+        className="sticky z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs"
+      >
         <div className="flex flex-col sm:flex-row items-center gap-2 max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto">
           
           {/* Warehouse Dropdown Listbox */}

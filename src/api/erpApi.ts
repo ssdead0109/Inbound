@@ -269,3 +269,45 @@ export async function fetchErpInboundHistory(limit: number = 100): Promise<Inbou
   return json.data || [];
 }
 
+/**
+ * 사내 ERP 'MMB100 + MMB150' 실시간 발주 내역 인터페이스
+ */
+export interface ErpPurchaseOrder {
+  poNo: string;           // 발주번호
+  poDate: string;         // 발주일자 (YYYY-MM-DD)
+  deliveryDate: string;   // 납기일자 (YYYY-MM-DD)
+  supplierCode: string;   // 공급처코드
+  supplierName: string;   // 공급처명
+  warehouseName: string;  // 입고예정 창고명
+  itemCode: string;       // 품목코드
+  itemName: string;       // 품목명
+  itemSpec: string;       // 규격
+  unit: string;           // 단위
+  poQty: number;          // 발주수량
+  receivedQty: number;    // 기입고수량
+  remainQty: number;      // 미입고 잔량
+  unitPrice: number;      // 발주단가
+  totalAmount: number;    // 발주금액
+  remarks: string;        // 비고
+  status: 'WAITING' | 'PARTIAL' | 'COMPLETED'; // 발주상태
+}
+
+/**
+ * 사내 ERP 'MMB100 + MMB150' 실시간 발주 내역 목록 조회
+ */
+export async function fetchErpPurchaseOrders(
+  query: string = '',
+  status: string = 'ALL',
+  limit: number = 150
+): Promise<ErpPurchaseOrder[]> {
+  const params = new URLSearchParams({
+    query,
+    status,
+    limit: limit.toString(),
+  });
+  const res = await fetch(`${API_BASE}/erp/purchase-orders?${params.toString()}`);
+  if (!res.ok) throw new Error('ERP 발주 내역 조회 실패');
+  const json = await res.json();
+  return json.data || [];
+}
+

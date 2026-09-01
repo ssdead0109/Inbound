@@ -169,7 +169,7 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
   });
 
   return (
-    <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-3.5 w-full overflow-x-hidden">
+    <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-3.5 w-full">
       
       {/* Hidden container for file scan */}
       <div id="file-qr-temp" className="hidden"></div>
@@ -189,7 +189,10 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
       </div>
 
       {/* 2. Unified Sticky Search & Camera Bar */}
-      <div className="sticky top-14 sm:top-16 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs">
+      <div
+        style={{ top: 'var(--app-header-h, 56px)' }}
+        className="sticky z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs"
+      >
         <div className="flex flex-col sm:flex-row items-center gap-2 max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto">
           
           {/* Main Action: Smartphone Camera Scan Button (앱 환경에서만 노출, 웹에서는 숨김) */}
