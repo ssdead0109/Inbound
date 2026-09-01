@@ -392,6 +392,33 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
             </div>
           )}
 
+          {/* Fallback & Error Action in Viewport */}
+          {(!cameraActive || cameraError) && (
+            <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center z-10 space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-400/30 text-indigo-400 flex items-center justify-center">
+                <Camera className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 max-w-xs">
+                <p className="text-white text-xs sm:text-sm font-bold">실시간 카메라 연결 불가 시</p>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  스마트폰 카메라로 사진을 찍거나 HTTPS(<strong className="text-indigo-400">https://192.168.2.29:3005</strong>)로 접속하세요.
+                </p>
+              </div>
+
+              <label className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center space-x-2 cursor-pointer shadow-lg shadow-indigo-600/40 active:scale-95 transition-all">
+                <Camera className="w-4 h-4" />
+                <span>📷 카메라로 즉시 촬영하여 QR 인식</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          )}
+
           {/* Processing Indicator */}
           {isProcessing && (
             <div className="absolute inset-0 bg-white/90 backdrop-blur-xs flex flex-col items-center justify-center z-10 animate-in fade-in duration-100">
@@ -403,11 +430,11 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
 
         {/* Error Notification */}
         {cameraError && (
-          <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-start space-x-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+          <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-start space-x-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
             <div className="flex-1 space-y-0.5">
-              <p className="font-bold">카메라 알림</p>
-              <p className="text-rose-600/90 leading-relaxed text-2xs">{cameraError}</p>
+              <p className="font-bold">카메라 안내</p>
+              <p className="text-amber-700/90 leading-relaxed text-2xs">{cameraError}</p>
             </div>
           </div>
         )}
