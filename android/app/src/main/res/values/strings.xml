@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">KCP SmartRack</string>
+    <string name="title_activity_main">KCP SmartRack</string>
+    <string name="package_name">com.kcp.smartrack</string>
+    <string name="custom_url_scheme">com.kcp.smartrack</string>
+</resources>
