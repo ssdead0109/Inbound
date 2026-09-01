@@ -10,8 +10,11 @@ import {
   Sparkles,
   ArrowRight,
   Camera,
-  ShieldAlert
+  ShieldAlert,
+  Smartphone
 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { soundHelper } from '../../utils/soundHelper';
 import { parseInboundQrCode, ParsedQrResult } from '../../utils/inboundQrParser';
 import { InboundSlip } from '../../types/inbound';
@@ -37,6 +40,7 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
   const [manualInput, setManualInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSecureCtx, setIsSecureCtx] = useState(true);
+  const isNativeApp = Capacitor.isNativePlatform();
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const readerElementId = 'inbound-qr-reader';
@@ -52,6 +56,57 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
       setIsSecureCtx(secure);
     }
   }, []);
+
+  // Native Android/iOS Camera Scan (Uses native CAMERA permission, completely HTTPS-free!)
+  const handleNativeCameraScan = async () => {
+    try {
+      setCameraError(null);
+      setIsProcessing(true);
+
+      // 1. Check & Request Native Android Camera Permission
+      const check = await CapCamera.checkPermissions();
+      if (check.camera !== 'granted') {
+        const req = await CapCamera.requestPermissions({ permissions: ['camera'] });
+        if (req.camera !== 'granted') {
+          setCameraError('스마트폰 앱 설정에서 카메라 권한을 허용해주세요.');
+          setIsProcessing(false);
+          return;
+        }
+      }
+
+      // 2. Open Native Android Camera Viewfinder
+      const image = await CapCamera.getPhoto({
+        quality: 95,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+        promptLabelHeader: 'QR 코드 촬영',
+        promptLabelPhoto: '앨범에서 선택',
+        promptLabelPicture: '카메라 촬영',
+      });
+
+      if (!image.dataUrl) {
+        setIsProcessing(false);
+        return;
+      }
+
+      // 3. Scan QR from captured native image
+      const html5Qr = new Html5Qrcode('file-qr-temp');
+      const fetchRes = await fetch(image.dataUrl);
+      const blob = await fetchRes.blob();
+      const file = new File([blob], 'captured_qr.jpg', { type: 'image/jpeg' });
+      const decodedText = await html5Qr.scanFile(file, true);
+      handleScannedText(decodedText);
+    } catch (err: any) {
+      console.warn('Native camera scan error:', err);
+      if (err.message && !err.message.includes('cancelled') && !err.message.includes('canceled')) {
+        soundHelper.playErrorBuzzer();
+        setCameraError('QR 코드를 인식하지 못했습니다. QR 코드가 정면에서 선명하게 보이도록 다시 촬영해주세요.');
+      }
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   // Handle scanned raw text
   const handleScannedText = useCallback(
@@ -175,9 +230,13 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
 
       let msg = '카메라를 실행할 수 없습니다.';
       if (err.name === 'NotAllowedError' || err.message?.includes('Permission')) {
-        msg = '카메라 접근 권한이 차단되었습니다. 브라우저 설정에서 카메라 권한을 허용해주세요.';
-      } else if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+        msg = isNativeApp
+          ? '스마트폰 설정에서 앱 카메라 권한을 허용해주세요.'
+          : '카메라 접근 권한이 차단되었습니다. 브라우저 설정에서 카메라 권한을 허용해주세요.';
+      } else if (!isNativeApp && !window.isSecureContext && window.location.hostname !== 'localhost') {
         msg = '모바일 브라우저는 보안(HTTPS) 연결에서만 카메라가 작동합니다. 아래 파일 업로드 또는 전표번호 직접 조회를 이용해주세요.';
+      } else if (isNativeApp) {
+        msg = '앱 카메라 권한으로 촬영하시려면 아래 [📷 스마트폰 카메라로 QR 촬영] 버튼을 눌러주세요.';
       } else if (err.name === 'OverconstrainedError') {
         msg = '후면 카메라 요구조건과 일치하는 장치를 찾지 못했습니다. 아래 카메라 선택 목록에서 다른 카메라를 선택해주세요.';
       }
@@ -291,8 +350,8 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
       {/* Hidden container for file scan */}
       <div id="file-qr-temp" className="hidden"></div>
 
-      {/* Insecure Context (HTTP) Mobile Guide Alert */}
-      {!isSecureCtx && (
+      {/* Insecure Context (HTTP) Mobile Guide Alert - ONLY SHOW ON WEB BROWSERS, NEVER ON NATIVE APP */}
+      {!isNativeApp && !isSecureCtx && (
         <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs flex items-start space-x-2.5 shadow-xs">
           <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <div className="flex-1 space-y-1">
@@ -392,30 +451,45 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
             </div>
           )}
 
-          {/* Fallback & Error Action in Viewport */}
+          {/* Fallback & Action in Viewport */}
           {(!cameraActive || cameraError) && (
             <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center z-10 space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-400/30 text-indigo-400 flex items-center justify-center">
-                <Camera className="w-6 h-6" />
+                {isNativeApp ? <Smartphone className="w-6 h-6" /> : <Camera className="w-6 h-6" />}
               </div>
               <div className="space-y-1 max-w-xs">
-                <p className="text-white text-xs sm:text-sm font-bold">실시간 카메라 연결 불가 시</p>
+                <p className="text-white text-xs sm:text-sm font-bold">
+                  {isNativeApp ? '스마트폰 카메라로 QR 스캔' : '실시간 카메라 연결 안내'}
+                </p>
                 <p className="text-slate-300 text-[11px] leading-relaxed">
-                  스마트폰 카메라로 사진을 찍거나 HTTPS(<strong className="text-indigo-400">https://192.168.2.29:3005</strong>)로 접속하세요.
+                  {isNativeApp
+                    ? '앱 카메라 권한으로 HTTPS 제한 없이 즉시 선명하게 촬영하여 검수합니다.'
+                    : '카메라로 QR코드를 촬영하거나 사진을 업로드하여 즉시 검수하세요.'}
                 </p>
               </div>
 
-              <label className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center space-x-2 cursor-pointer shadow-lg shadow-indigo-600/40 active:scale-95 transition-all">
-                <Camera className="w-4 h-4" />
-                <span>📷 카메라로 즉시 촬영하여 QR 인식</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
+              {isNativeApp ? (
+                <button
+                  type="button"
+                  onClick={handleNativeCameraScan}
+                  className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center space-x-2 cursor-pointer shadow-lg shadow-indigo-600/40 active:scale-95 transition-all"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>📷 스마트폰 카메라로 QR 촬영 인식</span>
+                </button>
+              ) : (
+                <label className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center space-x-2 cursor-pointer shadow-lg shadow-indigo-600/40 active:scale-95 transition-all">
+                  <Camera className="w-4 h-4" />
+                  <span>📷 카메라로 즉시 촬영하여 QR 인식</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              )}
             </div>
           )}
 
@@ -462,19 +536,30 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
             </button>
           </form>
 
-          {/* Photo File Upload Scan */}
+          {/* Photo File Upload or Native Camera Scan */}
           <div className="sm:col-span-4">
-            <label className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-300 cursor-pointer transition-all text-xs font-semibold shadow-2xs">
-              <Upload className="w-3.5 h-3.5 text-indigo-600" />
-              <span>QR 사진 찍기 / 업로드</span>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-            </label>
+            {isNativeApp ? (
+              <button
+                type="button"
+                onClick={handleNativeCameraScan}
+                className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl border border-indigo-200 cursor-pointer transition-all text-xs font-bold shadow-2xs active:scale-98"
+              >
+                <Camera className="w-4 h-4 text-indigo-600" />
+                <span>📷 스마트폰 카메라로 QR 촬영</span>
+              </button>
+            ) : (
+              <label className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-300 cursor-pointer transition-all text-xs font-semibold shadow-2xs">
+                <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                <span>QR 사진 찍기 / 업로드</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
+            )}
           </div>
 
         </div>
