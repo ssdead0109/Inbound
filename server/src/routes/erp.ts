@@ -337,6 +337,23 @@ router.get('/inbound/pending-slips', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/erp/inbound/history - ERP 'MT_T_입출고' 실시간 입고 완료 내역 조회
+router.get('/inbound/history', async (req: Request, res: Response) => {
+  try {
+    const { getErpInboundHistory } = await import('../db/erpInboundDb');
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '100', 10), 1), 200);
+    const slips = await getErpInboundHistory(limit);
+    res.json({
+      success: true,
+      count: slips.length,
+      data: slips,
+    });
+  } catch (err: any) {
+    console.error('[ERP Inbound History Error]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/erp/inbound/slips/:slipNo - ERP 단건 전표 조회 (QR 스캔 실시간 매칭용)
 router.get('/inbound/slips/:slipNo', async (req: Request, res: Response) => {
   try {

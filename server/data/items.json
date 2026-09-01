@@ -1,1 +1,21 @@
-[]
+[
+  {
+    "id": "item-erp-000000000-1788242901554",
+    "code": "000000000",
+    "name": "소모품",
+    "spec": "기종별",
+    "category": "ERP연동자재",
+    "warehouse": "특장자재창고",
+    "rackLocation": "미지정",
+    "quantity": 0,
+    "unit": "EA",
+    "safetyStock": 10,
+    "price": 0,
+    "supplier": "세명ENG(박석태)",
+    "notes": "ERP(System9) 실시간 연동 등록 품목",
+    "createdAt": "2026-09-01T06:08:21.554Z",
+    "updatedAt": "2026-09-01T06:08:21.554Z",
+    "printCount": 0,
+    "isPrinted": false
+  }
+]

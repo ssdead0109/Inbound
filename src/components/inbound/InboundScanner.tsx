@@ -38,7 +38,6 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const isNativeApp = Capacitor.isNativePlatform();
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const barcodeBufferRef = useRef<{ buffer: string; lastKeyTime: number }>({
     buffer: '',
     lastKeyTime: 0,
@@ -112,26 +111,6 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
       }
     } finally {
       setIsProcessing(false);
-    }
-  };
-
-  // Web Browser Photo/File Upload Scan
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setCameraError(null);
-      setIsProcessing(true);
-      const html5Qr = new Html5Qrcode('file-qr-temp');
-      const result = await html5Qr.scanFile(file, true);
-      handleScannedText(result);
-    } catch (err: any) {
-      soundHelper.playErrorBuzzer();
-      setCameraError('선택한 이미지에서 QR 코드를 인식하지 못했습니다. 선명한 사진을 업로드해주세요.');
-    } finally {
-      setIsProcessing(false);
-      if (e.target) e.target.value = '';
     }
   };
 
@@ -216,9 +195,9 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
         {/* Camera Scan Button & Search Form Grid */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-1">
           
-          {/* Main Action: Smartphone Camera Scan Button */}
-          <div className="md:col-span-5">
-            {isNativeApp ? (
+          {/* Main Action: Smartphone Camera Scan Button (앱 환경에서만 노출, 웹에서는 숨김) */}
+          {isNativeApp && (
+            <div className="md:col-span-5">
               <button
                 type="button"
                 onClick={handleNativeCameraScan}
@@ -228,31 +207,11 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
                 <Camera className="w-5 h-5 shrink-0" />
                 <span>📷 스마트폰 카메라로 QR 촬영</span>
               </button>
-            ) : (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isProcessing}
-                  className="w-full h-full min-h-[48px] px-4 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-sm font-bold flex items-center justify-center space-x-2.5 shadow-md shadow-indigo-200 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <Camera className="w-5 h-5 shrink-0" />
-                  <span>📷 카메라로 QR 촬영 / 사진 선택</span>
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Secondary Action: Slip Number Search Input */}
-          <div className="md:col-span-7">
+          <div className={isNativeApp ? "md:col-span-7" : "col-span-12"}>
             <form onSubmit={handleManualSubmit} className="flex items-center space-x-2 h-full">
               <div className="relative flex-1 h-full min-h-[48px]">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />

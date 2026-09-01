@@ -19,7 +19,8 @@ import {
   ChevronRight,
   Download,
   ZoomIn,
-  Printer
+  Printer,
+  RefreshCw
 } from 'lucide-react';
 import { InboundSlip } from '../../types/inbound';
 
@@ -27,12 +28,14 @@ interface InboundHistoryViewProps {
   slips: InboundSlip[];
   onOpenPrintModal: (slip: InboundSlip) => void;
   onSelectSlip: (slipNo: string) => void;
+  onRefresh?: () => void;
 }
 
 export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
   slips,
   onOpenPrintModal,
   onSelectSlip,
+  onRefresh,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'COMPLETED' | 'PARTIAL'>('ALL');
@@ -137,10 +140,20 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
           </div>
           <div>
             <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              입고 완료 내역
-              <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                {historySlips.length}건 ({totalItemsCount}개 품목)
+              <span>입고 완료 내역</span>
+              <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono">
+                {historySlips.length}건
               </span>
+              {onRefresh && (
+                <button
+                  type="button"
+                  onClick={onRefresh}
+                  title="사내 ERP 입고내역 새로고침"
+                  className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              )}
             </h2>
             <p className="text-xs text-slate-500 font-normal mt-0.5">
               총 실입고 수량: <strong className="text-slate-900 font-mono">{totalReceivedCount.toLocaleString()} EA</strong>

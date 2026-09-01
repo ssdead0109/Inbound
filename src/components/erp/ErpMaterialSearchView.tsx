@@ -236,97 +236,37 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
   return (
     <div className="space-y-4 sm:space-y-6 pb-16">
       
-      {/* 1. Header Banner & MSSQL Live Status Card */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 sm:p-6 rounded-2xl shadow-md border border-slate-800 relative overflow-hidden">
+      {/* 1. Header Banner */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-slate-800 relative overflow-hidden">
         <div className="absolute top-0 right-0 -mt-8 -mr-8 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-          <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-4 relative z-10">
+          <div className="space-y-1">
             <div className="flex items-center space-x-2">
-              <span className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+              <span className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shrink-0">
                 <Database className="w-5 h-5" />
               </span>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                사내 ERP 자재 실시간 조회
-              </h1>
+              <div className="flex items-center space-x-2">
+                <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
+                  사내 ERP 자재 실시간 조회
+                </h1>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleIncrementalSync(true);
+                    executeSearch(searchTerm);
+                  }}
+                  disabled={isSyncing}
+                  title="사내 ERP 자재 새로고침"
+                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-indigo-300 hover:text-white transition-all cursor-pointer border border-white/10 shrink-0"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
             </div>
-            <p className="text-xs sm:text-sm text-slate-300">
+            <p className="text-xs text-slate-300">
               사내 MSSQL 데이터베이스(<span className="font-mono text-indigo-300 font-bold">System9</span>)와 실시간 직접 연동되어 자재 마스터 및 수불 이력을 조회합니다.
             </p>
-          </div>
-
-          {/* Connection Status Pill */}
-          <div className="flex items-center space-x-2 bg-slate-800/80 border border-slate-700/80 px-3.5 py-2 rounded-xl text-xs backdrop-blur-sm self-start sm:self-auto">
-            <span className="relative flex h-2.5 w-2.5">
-              {erpStatus?.isConnected ? (
-                <>
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                </>
-              ) : (
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
-              )}
-            </span>
-
-            <div className="flex flex-col">
-              <span className="font-bold text-slate-200 flex items-center gap-1">
-                {erpStatus?.isConnected ? 'MSSQL 서버 연결됨' : '연결 확인 중...'}
-              </span>
-              <span className="text-[10px] text-slate-400 font-mono">
-                {erpStatus?.server}:{erpStatus?.port} ({erpStatus?.database})
-              </span>
-            </div>
-
-            <button
-              onClick={loadStatus}
-              disabled={isStatusLoading}
-              title="연결 상태 다시 확인"
-              className="ml-2 p-1 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isStatusLoading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-
-        {/* Quick Stats Counter */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 mt-4 pt-4 border-t border-slate-800 text-xs">
-          <div className="bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
-            <span className="text-slate-400 block text-[11px]">ERP 등록 자재 마스터</span>
-            <span className="text-lg sm:text-xl font-black font-mono text-indigo-400">
-              {erpStatus?.totalMaterials ? erpStatus.totalMaterials.toLocaleString() : '3,592'} <span className="text-xs font-normal text-slate-400">종</span>
-            </span>
-          </div>
-          <div className="bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
-            <span className="text-slate-400 block text-[11px]">현재 검색된 자재</span>
-            <span className="text-lg sm:text-xl font-black font-mono text-emerald-400">
-              {materials.length.toLocaleString()} <span className="text-xs font-normal text-slate-400">건</span>
-            </span>
-          </div>
-          <div className="bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
-            <span className="text-slate-400 block text-[11px] flex items-center gap-1">
-              <Zap className="w-3 h-3 text-amber-400 shrink-0" />
-              <span>인덱스DB 로컬 캐시</span>
-            </span>
-            <span className="text-lg sm:text-xl font-black font-mono text-amber-400">
-              {cachedCount.toLocaleString()} <span className="text-xs font-normal text-slate-400">종 (부하 0%)</span>
-            </span>
-          </div>
-          <div className="bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400 block text-[11px]">증분 동기화</span>
-              <button
-                type="button"
-                onClick={() => handleIncrementalSync(true)}
-                disabled={isSyncing}
-                className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50 shadow-xs"
-              >
-                <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>{isSyncing ? '동기화 중...' : '증분 동기화'}</span>
-              </button>
-            </div>
-            <span className="text-xs font-bold text-slate-300 truncate mt-1">
-              {lastSyncStr ? `${lastSyncStr} 완료` : '로컬 준비됨'}
-            </span>
           </div>
         </div>
       </div>

@@ -227,3 +227,13 @@ export async function fetchErpUsers(): Promise<ErpUser[]> {
   return json.data || [];
 }
 
+/**
+ * 사내 ERP 'MT_T_입출고' 실시간 입고 완료 내역 조회
+ */
+export async function fetchErpInboundHistory(limit: number = 100): Promise<InboundSlip[]> {
+  const res = await fetch(`${API_BASE}/inbound/history?limit=${limit}`);
+  if (!res.ok) throw new Error('ERP 입고 내역 조회 실패');
+  const json = await res.json();
+  return json.data || [];
+}
+

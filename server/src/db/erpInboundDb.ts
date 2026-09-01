@@ -530,3 +530,99 @@ export async function getErpInboundPrintData(
 
   throw new Error(`전표 [${cleanSlipNo}]에 대한 입하증 데이터를 사내 ERP(MMB202_Print)에서 찾을 수 없습니다.`);
 }
+
+/**
+ * 사내 ERP MSSQL 'MT_T_입출고' 테이블에서 실제 입고 완료 내역 조회
+ */
+export async function getErpInboundHistory(limit: number = 100): Promise<InboundSlip[]> {
+  const isConnected = await mssqlAdapter.connect();
+  if (!isConnected) {
+    throw new Error('ERP MSSQL 서버에 연결할 수 없습니다.');
+  }
+
+  const sql = `
+    SELECT TOP (${limit * 5})
+      RTRIM(ISNULL(T.전표번호, '')) AS slipNo,
+      ISNULL(T.일련번호, 1) AS seq,
+      RTRIM(ISNULL(T.구분, '')) AS type,
+      RTRIM(ISNULL(T.세부구분, '')) AS subType,
+      ISNULL(T.날짜, '') AS date,
+      RTRIM(ISNULL(T.품목코드, '')) AS itemCode,
+      RTRIM(ISNULL(T.품목명, '')) AS itemName,
+      RTRIM(ISNULL(T.규격, '')) AS spec,
+      RTRIM(ISNULL(T.최소단위, 'EA')) AS unit,
+      ISNULL(T.입고수량, 0) AS inQty,
+      ISNULL(T.출고수량, 0) AS outQty,
+      ISNULL(T.수량, 0) AS totalQty,
+      ISNULL(T.단가, 0) AS unitPrice,
+      ISNULL(T.합계, 0) AS totalAmount,
+      RTRIM(ISNULL(T.거래처코드, '')) AS supplierCode,
+      RTRIM(ISNULL(C.거래처명, '')) AS supplierName,
+      RTRIM(ISNULL(T.창고코드, '001')) AS warehouseCode,
+      RTRIM(ISNULL(T.비고, '')) AS memo,
+      RTRIM(ISNULL(T.담당자코드, '')) AS managerCode
+    FROM MT_T_입출고 T
+    LEFT JOIN MT_TC_거래처코드 C ON T.거래처코드 = C.거래처코드
+    WHERE T.구분 = '입고' OR T.입고수량 > 0
+    ORDER BY T.날짜 DESC, T.일련번호 DESC
+  `;
+
+  const rows = await mssqlAdapter.query<any>(sql);
+
+  const slipMap = new Map<string, InboundSlip>();
+
+  for (const row of rows) {
+    const slipNo = row.slipNo || `IN-${row.date}-${row.seq}`;
+    const qty = Number(row.inQty || row.totalQty || 0);
+    const unitPrice = Number(row.unitPrice || 0);
+
+    const item: InboundItem = {
+      id: `erp-hist-${slipNo}-${row.seq}`,
+      itemCode: row.itemCode,
+      itemName: row.itemName,
+      spec: row.spec || '',
+      unit: row.unit || 'EA',
+      orderQty: qty,
+      receivedQty: qty,
+      defectQty: 0,
+      warehouse: row.warehouseCode || '화성공장',
+      unitPrice,
+      status: 'COMPLETED',
+      barcode: `${row.itemCode}-${qty}`,
+      notes: row.memo || '',
+    };
+
+    if (!slipMap.has(slipNo)) {
+      slipMap.set(slipNo, {
+        slipNo,
+        supplierCode: row.supplierCode,
+        supplierName: row.supplierName || '사내입고',
+        poNumber: slipNo,
+        deliveryDate: row.date,
+        status: 'COMPLETED',
+        totalItems: 1,
+        totalOrderedQty: qty,
+        totalReceivedQty: qty,
+        totalDefectQty: 0,
+        manager: row.managerCode || '자재담당',
+        memo: row.memo || '사내 ERP(MT_T_입출고) 실시간 입고 내역',
+        items: [item],
+        createdAt: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
+        updatedAt: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
+        inboundDate: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
+      });
+    } else {
+      const existing = slipMap.get(slipNo)!;
+      existing.items.push(item);
+      existing.totalItems = existing.items.length;
+      existing.totalOrderedQty += qty;
+      existing.totalReceivedQty += qty;
+    }
+
+    if (slipMap.size >= limit) {
+      break;
+    }
+  }
+
+  return Array.from(slipMap.values());
+}

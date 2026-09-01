@@ -85,19 +85,20 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Load Slips, Stats and Warehouses from Backend (통합 ERP 실시간 미입고 연동)
+  // Load Slips, Stats and Warehouses from Backend (통합 ERP 실시간 미입고 & 입고내역 연동)
   const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [fetchedLocal, fetchedErp, fetchedStats, fetchedWh] = await Promise.all([
+      const [fetchedLocal, fetchedErpPending, fetchedErpHistory, fetchedStats, fetchedWh] = await Promise.all([
         inboundApi.fetchInboundSlips().catch(() => []),
         erpApi.fetchErpPendingSlips('', 100).catch(() => []),
+        erpApi.fetchErpInboundHistory(100).catch(() => []),
         inboundApi.fetchInboundStats().catch(() => null),
         inboundApi.fetchWarehouses().catch(() => []),
       ]);
 
       const combined = [...fetchedLocal];
-      for (const es of fetchedErp) {
+      for (const es of [...fetchedErpPending, ...fetchedErpHistory]) {
         if (!combined.some((s) => s.slipNo === es.slipNo)) {
           combined.push(es);
         }
@@ -353,6 +354,7 @@ export default function App() {
         onChangeOperator={handleOperatorChange}
         currentUser={currentUser}
         onLogout={handleLogout}
+        onRefreshData={loadInitialData}
       />
 
       {/* Main Workspace Body */}
@@ -390,6 +392,7 @@ export default function App() {
             slips={slips}
             onOpenPrintModal={handleOpenPrintModal}
             onSelectSlip={handleSelectPendingSlip}
+            onRefresh={loadInitialData}
           />
         )}
 
