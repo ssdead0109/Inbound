@@ -57,11 +57,31 @@ export interface ErpUser {
 
 const API_BASE = '/api/erp';
 
+export interface ErpSyncResult {
+  isIncremental: boolean;
+  count: number;
+  totalCount: number;
+  syncTimestamp: number;
+  lastUpdated: string;
+  data: ErpMaterial[];
+}
+
 export async function fetchErpStatus(): Promise<ErpStatus> {
   const res = await fetch(`${API_BASE}/status`);
   if (!res.ok) throw new Error('ERP 상태 조회 실패');
   const json = await res.json();
   return json.data;
+}
+
+export async function syncErpMaterials(since?: string, limit: number = 3000): Promise<ErpSyncResult> {
+  const params = new URLSearchParams();
+  if (since) params.set('since', since);
+  params.set('limit', limit.toString());
+
+  const res = await fetch(`${API_BASE}/materials/sync?${params.toString()}`);
+  if (!res.ok) throw new Error('ERP 증분 동기화 실패');
+  const json = await res.json();
+  return json;
 }
 
 export async function searchErpMaterials(query: string = '', limit: number = 50): Promise<ErpMaterial[]> {

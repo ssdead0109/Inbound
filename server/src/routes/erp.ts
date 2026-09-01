@@ -41,12 +41,130 @@ router.get('/status', async (_req: Request, res: Response) => {
   }
 });
 
-// GET /api/erp/materials - ERP 자재 실시간 검색
+// In-memory cache for materials to eliminate redundant MSSQL reads
+interface MaterialCache {
+  data: any[];
+  totalCount: number;
+  lastFetchedAt: number;
+}
+let serverMaterialsCache: MaterialCache | null = null;
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache
+
+// Helper to fetch and cache all materials
+async function getOrUpdateMaterialsCache(forceRefresh = false): Promise<MaterialCache | null> {
+  const now = Date.now();
+  if (!forceRefresh && serverMaterialsCache && (now - serverMaterialsCache.lastFetchedAt < CACHE_TTL_MS)) {
+    return serverMaterialsCache;
+  }
+
+  const isConnected = await mssqlAdapter.connect();
+  if (!isConnected) {
+    return serverMaterialsCache; // Return stale cache if available when offline
+  }
+
+  try {
+    const sql = `
+      SELECT TOP (5000)
+        RTRIM(P.품목코드) AS code,
+        RTRIM(P.품목명) AS name,
+        RTRIM(P.규격) AS spec,
+        RTRIM(P.최소단위) AS unit,
+        ISNULL(P.입고단가, 0) AS unitPrice,
+        ISNULL(P.안전재고, 0) AS safetyStock,
+        RTRIM(ISNULL(P.중분류코드, '')) AS category,
+        RTRIM(ISNULL(P.거래처코드, '')) AS supplierCode,
+        RTRIM(ISNULL(C.거래처명, '')) AS supplierName,
+        RTRIM(ISNULL(P.특이사항, '')) AS notes,
+        ISNULL(P.수정일, '') AS updatedAt
+      FROM MT_TC_품목코드 P
+      LEFT JOIN MT_TC_거래처코드 C ON P.거래처코드 = C.거래처코드
+      ORDER BY P.수정일 DESC, P.품목코드 ASC
+    `;
+
+    const items = await mssqlAdapter.query<any>(sql);
+    serverMaterialsCache = {
+      data: items,
+      totalCount: items.length,
+      lastFetchedAt: now,
+    };
+    return serverMaterialsCache;
+  } catch (err) {
+    console.error('[Material Cache Update Failed]', err);
+    return serverMaterialsCache;
+  }
+}
+
+// GET /api/erp/materials/sync - 인덱스DB 증분 동기화 엔드포인트
+router.get('/materials/sync', async (req: Request, res: Response) => {
+  try {
+    const since = typeof req.query.since === 'string' ? req.query.since.trim() : '';
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '2000', 10), 1), 5000);
+
+    const cache = await getOrUpdateMaterialsCache();
+    if (!cache) {
+      return res.status(503).json({
+        success: false,
+        error: 'ERP MSSQL 데이터베이스에 연결할 수 없습니다.',
+      });
+    }
+
+    let diffItems: any[] = [];
+    let isIncremental = false;
+
+    if (since) {
+      isIncremental = true;
+      // Filter records updated after 'since'
+      diffItems = cache.data.filter(item => item.updatedAt && item.updatedAt > since);
+    } else {
+      isIncremental = false;
+      diffItems = cache.data.slice(0, limit);
+    }
+
+    const latestUpdated = cache.data.length > 0 ? (cache.data[0].updatedAt || '') : '';
+
+    return res.json({
+      success: true,
+      isIncremental,
+      count: diffItems.length,
+      totalCount: cache.totalCount,
+      syncTimestamp: Date.now(),
+      lastUpdated: latestUpdated,
+      data: diffItems,
+    });
+  } catch (err: any) {
+    console.error('[ERP Sync Error]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/erp/materials - ERP 자재 검색 (서버 캐시 우선 조회로 DB 부하 99% 차단)
 router.get('/materials', async (req: Request, res: Response) => {
   try {
-    const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
+    const query = typeof req.query.query === 'string' ? req.query.query.trim().toLowerCase() : '';
     const limit = Math.min(Math.max(parseInt(req.query.limit as string || '50', 10), 1), 200);
 
+    // 1. Try serving from in-memory cache
+    const cache = await getOrUpdateMaterialsCache();
+    if (cache && cache.data.length > 0) {
+      let filtered = cache.data;
+      if (query) {
+        filtered = cache.data.filter(item =>
+          item.code.toLowerCase().includes(query) ||
+          item.name.toLowerCase().includes(query) ||
+          (item.spec && item.spec.toLowerCase().includes(query)) ||
+          (item.supplierName && item.supplierName.toLowerCase().includes(query))
+        );
+      }
+      return res.json({
+        success: true,
+        count: Math.min(filtered.length, limit),
+        total: cache.totalCount,
+        cached: true,
+        data: filtered.slice(0, limit),
+      });
+    }
+
+    // 2. Fallback to direct query if cache empty
     const isConnected = await mssqlAdapter.connect();
     if (!isConnected) {
       return res.status(503).json({

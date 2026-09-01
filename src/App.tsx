@@ -48,8 +48,11 @@ export default function App() {
   // Active Slip currently being inspected
   const [activeSlip, setActiveSlip] = useState<InboundSlip | null>(null);
 
-  // Active User / Operator Session (ERP MT_TC_담당자코드)
+  // Active User / Operator Session (ERP MT_TC_담당자코드 / scu100)
   const [currentUser, setCurrentUser] = useState<ErpUser | null>(() => {
+    const isAutoLogin = localStorage.getItem('kcp_auto_login') === 'true';
+    if (!isAutoLogin) return null;
+
     const saved = localStorage.getItem('kcp_erp_user');
     if (saved) {
       try { return JSON.parse(saved); } catch { return null; }
@@ -147,6 +150,7 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     localStorage.removeItem('kcp_erp_user');
+    localStorage.removeItem('kcp_auto_login');
     showToast('로그아웃되었습니다.', 'info');
   };
 
