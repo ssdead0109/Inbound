@@ -305,7 +305,7 @@ export async function fetchErpPurchaseOrders(
     status,
     limit: limit.toString(),
   });
-  const res = await fetch(`${API_BASE}/erp/purchase-orders?${params.toString()}`);
+  const res = await fetch(`${API_BASE}/purchase-orders?${params.toString()}`);
   if (!res.ok) throw new Error('ERP 발주 내역 조회 실패');
   const json = await res.json();
   return json.data || [];
