@@ -1,18 +1,1 @@
-[
-  {
-    "id": "item-erp-inb-1788229038154-0",
-    "code": "SC112500050",
-    "name": "BOOM DUMP CYLINDER",
-    "spec": "CA-Ø60*Ø40-238ST",
-    "category": "ERP입고자재",
-    "warehouse": "특장자재창고",
-    "rackLocation": "미지정",
-    "quantity": 10,
-    "unit": "EA",
-    "safetyStock": 10,
-    "price": 337000,
-    "supplier": "미래테크",
-    "createdAt": "2026-09-01T02:17:18.074Z",
-    "updatedAt": "2026-09-01T02:17:18.074Z"
-  }
-]
+[]

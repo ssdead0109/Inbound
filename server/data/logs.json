@@ -1,15 +1,1 @@
-[
-  {
-    "id": "log-erp-inb-1788229038154-0",
-    "itemId": "item-erp-inb-1788229038154-0",
-    "itemCode": "SC112500050",
-    "itemName": "BOOM DUMP CYLINDER",
-    "type": "IN",
-    "quantity": 10,
-    "previousQty": 0,
-    "newQty": 10,
-    "manager": "홍길동 (자재과장)",
-    "reason": "ERP(MSSQL) 입고확정 [전표: 19010200027, 거래처: 미래테크]",
-    "timestamp": "2026-09-01T02:17:18.074Z"
-  }
-]
+[]

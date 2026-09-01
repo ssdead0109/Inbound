@@ -17,7 +17,7 @@ interface InboundNavbarProps {
   pendingCount: number;
   operator: string;
   onChangeOperator: (operator: string) => void;
-  onResetSamples: () => void;
+  onResetSamples?: () => void;
   currentUser?: ErpUser | null;
   onLogout?: () => void;
 }
@@ -175,16 +175,6 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
                 <span className="font-semibold text-slate-800">{operator}</span>
               </div>
             )}
-
-            {/* Quick Reset Sample Button */}
-            <button
-              type="button"
-              onClick={onResetSamples}
-              title="샘플 납품확인서 데이터 복원"
-              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
           </div>
 
         </div>

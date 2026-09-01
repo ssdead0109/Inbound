@@ -85,16 +85,25 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Load Slips, Stats and Warehouses from Backend
+  // Load Slips, Stats and Warehouses from Backend (통합 ERP 실시간 미입고 연동)
   const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [fetchedSlips, fetchedStats, fetchedWh] = await Promise.all([
-        inboundApi.fetchInboundSlips(),
+      const [fetchedLocal, fetchedErp, fetchedStats, fetchedWh] = await Promise.all([
+        inboundApi.fetchInboundSlips().catch(() => []),
+        erpApi.fetchErpPendingSlips('', 100).catch(() => []),
         inboundApi.fetchInboundStats().catch(() => null),
         inboundApi.fetchWarehouses().catch(() => []),
       ]);
-      setSlips(fetchedSlips);
+
+      const combined = [...fetchedLocal];
+      for (const es of fetchedErp) {
+        if (!combined.some((s) => s.slipNo === es.slipNo)) {
+          combined.push(es);
+        }
+      }
+
+      setSlips(combined);
       if (fetchedStats) setStats(fetchedStats);
       if (fetchedWh && fetchedWh.length > 0) setWarehouses(fetchedWh);
     } catch (err: any) {
@@ -275,18 +284,6 @@ export default function App() {
     }
   };
 
-  // Reset Sample Delivery Slips
-  const handleResetSamples = async () => {
-    if (!window.confirm('기본 5종 샘플 납품확인서 데이터로 초기화하시겠습니까?')) return;
-    try {
-      await inboundApi.resetInboundSamplesApi();
-      await loadInitialData();
-      showToast('샘플 납품확인서가 초기화되었습니다.', 'success');
-    } catch (err: any) {
-      showToast(err.message || '초기화 실패', 'error');
-    }
-  };
-
   // Open Print Modal (if opened from History)
   const handleOpenPrintModal = (slip: InboundSlip) => {
     setSlipToPrint(slip);
@@ -354,7 +351,6 @@ export default function App() {
         pendingCount={pendingCount}
         operator={operator}
         onChangeOperator={handleOperatorChange}
-        onResetSamples={handleResetSamples}
         currentUser={currentUser}
         onLogout={handleLogout}
       />
