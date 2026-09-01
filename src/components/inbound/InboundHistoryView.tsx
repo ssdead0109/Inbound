@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   History,
   Search,
@@ -23,6 +23,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { InboundSlip } from '../../types/inbound';
+import { registerBackHandler } from '../../utils/backHandler';
 
 interface InboundHistoryViewProps {
   slips: InboundSlip[];
@@ -67,6 +68,15 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
   const closePhotoViewer = () => {
     setPhotoViewer((prev) => ({ ...prev, isOpen: false }));
   };
+
+  // Register Back Handler: Close photo viewer on smartphone back button
+  useEffect(() => {
+    if (!photoViewer.isOpen) return;
+    return registerBackHandler('photoViewer', 100, () => {
+      closePhotoViewer();
+      return true;
+    });
+  }, [photoViewer.isOpen]);
 
   const handleNextPhoto = (e: React.MouseEvent) => {
     e.stopPropagation();

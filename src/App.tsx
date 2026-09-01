@@ -3,7 +3,7 @@
  * QR코드 기반 실시간 납품확인서 검수 및 입고처리 (PC & Mobile PWA)
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   InboundSlip,
   InboundViewTab,
@@ -16,6 +16,7 @@ import { ParsedQrResult } from './utils/inboundQrParser';
 import { soundHelper } from './utils/soundHelper';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
+import { registerBackHandler, triggerBack } from './utils/backHandler';
 
 import { InboundNavbar } from './components/inbound/InboundNavbar';
 import { InboundScanner } from './components/inbound/InboundScanner';
@@ -39,8 +40,10 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // Main Navigation Tab
+  // Main Navigation Tab & Tab History Stack (전에 작업하던 곳으로 뒤로가기)
   const [currentTab, setCurrentTab] = useState<InboundViewTab>('SCANNER');
+  const [tabHistory, setTabHistory] = useState<InboundViewTab[]>(['SCANNER']);
+  const lastBackPressRef = useRef<number>(0);
 
   // Slips, Stats & Warehouses State
   const [slips, setSlips] = useState<InboundSlip[]>([]);
@@ -83,49 +86,117 @@ export default function App() {
   // Toast Notification
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
-  };
+  }, []);
 
-  // Android Hardware Back Button Handler (검수 화면 및 모달에서 뒤로가기 시 앱 꺼짐 방지)
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-
-    let listener: any = null;
-    CapApp.addListener('backButton', () => {
-      // 1. If print modal or simulator is open -> close modal
-      if (isPrintModalOpen) {
-        setIsPrintModalOpen(false);
-        return;
-      }
-      if (isSimulatorOpen) {
-        setIsSimulatorOpen(false);
-        return;
-      }
-      // 2. If in inspection view ('RECEIVING') -> safely return to scanner/pending list
-      if (currentTab === 'RECEIVING') {
-        setCurrentTab('SCANNER');
-        setActiveSlip(null);
-        return;
-      }
-      // 3. If in another tab ('HISTORY', 'PURCHASE_ORDERS', 'ERP_SEARCH') -> return to home tab ('SCANNER')
-      if (currentTab !== 'SCANNER') {
-        setCurrentTab('SCANNER');
-        return;
-      }
-      // 4. If already on top-level home screen -> minimize or exit app
-      CapApp.exitApp();
-    }).then((l) => {
-      listener = l;
+  // Unified Tab Navigation (Pushes to History Stack & window.history)
+  const navigateToTab = useCallback((nextTab: InboundViewTab, slip?: InboundSlip | null) => {
+    if (slip) {
+      setActiveSlip(slip);
+    } else if (nextTab !== 'RECEIVING') {
+      setActiveSlip(null);
+    }
+    setTabHistory((prev) => {
+      if (prev[prev.length - 1] === nextTab) return prev;
+      return [...prev, nextTab];
     });
+    setCurrentTab(nextTab);
+    try {
+      window.history.pushState({ tab: nextTab }, '', '');
+    } catch { /* ignore */ }
+  }, []);
+
+  // Return from inspection to previous screen
+  const handleBackFromReceiving = useCallback(() => {
+    setActiveSlip(null);
+    setTabHistory((prev) => {
+      const copy = [...prev];
+      if (copy[copy.length - 1] === 'RECEIVING') copy.pop();
+      return copy.length > 0 ? copy : ['SCANNER'];
+    });
+    setCurrentTab('SCANNER');
+  }, []);
+
+  // Register Back Handler for Simulator Modal (Priority 100)
+  useEffect(() => {
+    if (!isSimulatorOpen) return;
+    return registerBackHandler('simulatorModal', 100, () => {
+      setIsSimulatorOpen(false);
+      return true;
+    });
+  }, [isSimulatorOpen]);
+
+  // Register Back Handler for Inspection Screen (Priority 50)
+  useEffect(() => {
+    if (currentTab !== 'RECEIVING') return;
+    return registerBackHandler('receivingScreen', 50, () => {
+      handleBackFromReceiving();
+      return true;
+    });
+  }, [currentTab, handleBackFromReceiving]);
+
+  // Register Back Handler for Tab History (Priority 20: "전에 작업하던 곳으로 이동")
+  useEffect(() => {
+    return registerBackHandler('tabHistory', 20, () => {
+      if (tabHistory.length > 1) {
+        const copy = [...tabHistory];
+        copy.pop(); // remove current tab
+        const prevTab = copy[copy.length - 1] || 'SCANNER';
+        setTabHistory(copy);
+        setCurrentTab(prevTab);
+        if (prevTab !== 'RECEIVING') {
+          setActiveSlip(null);
+        }
+        return true;
+      }
+      return false; // at root level
+    });
+  }, [tabHistory]);
+
+  // Global Back Trigger Handler (Priority 0: Double-tap to exit at root)
+  const handleGlobalBack = useCallback(() => {
+    // 1. Traverse priority stack (modals, subviews, tab history)
+    const isHandled = triggerBack();
+    if (isHandled) return;
+
+    // 2. At root home screen: double-tap within 2s to exit app
+    const now = Date.now();
+    if (now - lastBackPressRef.current < 2000) {
+      if (Capacitor.isNativePlatform()) {
+        CapApp.exitApp();
+      }
+    } else {
+      lastBackPressRef.current = now;
+      showToast('뒤로가기 버튼을 한 번 더 누르면 종료됩니다.', 'info');
+    }
+  }, [showToast]);
+
+  // Wire into Android Capacitor native back button AND Web popstate
+  useEffect(() => {
+    let capListener: any = null;
+
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('backButton', () => {
+        handleGlobalBack();
+      }).then((l) => {
+        capListener = l;
+      });
+    }
+
+    const onPopState = (e: PopStateEvent) => {
+      e.preventDefault();
+      handleGlobalBack();
+    };
+
+    window.addEventListener('popstate', onPopState);
 
     return () => {
-      if (listener) {
-        listener.remove();
-      }
+      if (capListener) capListener.remove();
+      window.removeEventListener('popstate', onPopState);
     };
-  }, [isPrintModalOpen, isSimulatorOpen, currentTab]);
+  }, [handleGlobalBack]);
 
   // Load Slips, Stats and Warehouses from Backend (통합 ERP 실시간 미입고 & 입고내역 연동)
   const loadInitialData = useCallback(async () => {
@@ -216,7 +287,7 @@ export default function App() {
         const registered = await inboundApi.createInboundSlipApi(result.directSlipData);
         await loadInitialData();
         setActiveSlip(registered);
-        setCurrentTab('RECEIVING');
+        navigateToTab('RECEIVING', registered);
         showToast(`납품확인서 [${registered.slipNo}] 스캔 성공! 검수를 시작합니다.`, 'success');
         return;
       } catch (err: any) {
@@ -229,16 +300,14 @@ export default function App() {
       // Try local slip first
       try {
         const slip = await inboundApi.fetchInboundSlipByNo(result.slipNo);
-        setActiveSlip(slip);
-        setCurrentTab('RECEIVING');
+        navigateToTab('RECEIVING', slip);
         showToast(`납품확인서 [${slip.slipNo}] 조회 완료! 검수를 시작합니다.`, 'success');
         return;
       } catch {
         // Fallback to ERP '미입고현황' real-time search
         try {
           const erpSlip = await erpApi.fetchErpSlipByNo(result.slipNo);
-          setActiveSlip(erpSlip);
-          setCurrentTab('RECEIVING');
+          navigateToTab('RECEIVING', erpSlip);
           showToast(`사내 ERP 미입고 전표 [${erpSlip.slipNo}] 조회 완료! 실시간 입고 검수를 시작합니다.`, 'success');
           return;
         } catch (erpErr: any) {
@@ -255,20 +324,17 @@ export default function App() {
   // Select Pending Slip to Inspect (supports direct ERP slip object)
   const handleSelectPendingSlip = async (slipNo: string, directSlip?: InboundSlip) => {
     if (directSlip) {
-      setActiveSlip(directSlip);
-      setCurrentTab('RECEIVING');
+      navigateToTab('RECEIVING', directSlip);
       return;
     }
 
     try {
       const slip = await inboundApi.fetchInboundSlipByNo(slipNo);
-      setActiveSlip(slip);
-      setCurrentTab('RECEIVING');
+      navigateToTab('RECEIVING', slip);
     } catch {
       try {
         const erpSlip = await erpApi.fetchErpSlipByNo(slipNo);
-        setActiveSlip(erpSlip);
-        setCurrentTab('RECEIVING');
+        navigateToTab('RECEIVING', erpSlip);
       } catch (err: any) {
         showToast(err.message || '전표 조회 실패', 'error');
       }
@@ -305,8 +371,7 @@ export default function App() {
       }
 
       await loadInitialData();
-      setActiveSlip(resultSlip);
-      setCurrentTab('HISTORY');
+      navigateToTab('HISTORY', resultSlip);
     } catch (err: any) {
       soundHelper.playErrorBuzzer();
       showToast(err.message || '입고 처리 중 오류가 발생했습니다.', 'error');
@@ -320,8 +385,7 @@ export default function App() {
       const updated = await inboundApi.updateInboundSlipStatusApi(slipNo, 'HOLD', memo);
       showToast(`납품확인서 [${slipNo}]가 보류 처리되었습니다.`, 'info');
       await loadInitialData();
-      setActiveSlip(updated);
-      setCurrentTab('PENDING');
+      navigateToTab('PENDING', updated);
     } catch (err: any) {
       showToast(err.message || '보류 처리 실패', 'error');
     }
@@ -390,7 +454,7 @@ export default function App() {
       {/* Main Top Navbar (KCP 자재입고) */}
       <InboundNavbar
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={navigateToTab}
         pendingCount={pendingCount}
         operator={operator}
         onChangeOperator={handleOperatorChange}
@@ -416,7 +480,7 @@ export default function App() {
             warehouses={warehouses}
             onConfirmReceiving={handleConfirmReceiving}
             onHoldSlip={handleHoldSlip}
-            onBackToScanner={() => setCurrentTab('SCANNER')}
+            onBackToScanner={handleBackFromReceiving}
           />
         )}
 
@@ -453,7 +517,7 @@ export default function App() {
       >
         <button
           type="button"
-          onClick={() => setCurrentTab('SCANNER')}
+          onClick={() => navigateToTab('SCANNER')}
           className={`flex flex-col items-center justify-center space-y-1 transition-all relative cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
             currentTab === 'SCANNER' || currentTab === 'PENDING' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
           }`}
@@ -469,7 +533,7 @@ export default function App() {
 
         <button
           type="button"
-          onClick={() => setCurrentTab('HISTORY')}
+          onClick={() => navigateToTab('HISTORY')}
           className={`flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
             currentTab === 'HISTORY' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
           }`}
@@ -480,7 +544,7 @@ export default function App() {
 
         <button
           type="button"
-          onClick={() => setCurrentTab('PURCHASE_ORDERS')}
+          onClick={() => navigateToTab('PURCHASE_ORDERS')}
           className={`flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
             currentTab === 'PURCHASE_ORDERS' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
           }`}
@@ -491,7 +555,7 @@ export default function App() {
 
         <button
           type="button"
-          onClick={() => setCurrentTab('ERP_SEARCH')}
+          onClick={() => navigateToTab('ERP_SEARCH')}
           className={`flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
             currentTab === 'ERP_SEARCH' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
           }`}

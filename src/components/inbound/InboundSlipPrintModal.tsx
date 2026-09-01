@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { InboundSlip } from '../../types/inbound';
 import { fetchErpPrintData } from '../../api/erpApi';
+import { registerBackHandler } from '../../utils/backHandler';
 
 interface InboundSlipPrintModalProps {
   isOpen: boolean;
@@ -50,6 +51,15 @@ export const InboundSlipPrintModal: React.FC<InboundSlipPrintModalProps> = ({
       setErpSlip(null);
     }
   }, [isOpen, slip, loadErpData]);
+
+  // Register Back Handler: Close print modal on smartphone back button
+  useEffect(() => {
+    if (!isOpen) return;
+    return registerBackHandler('printModal', 100, () => {
+      onClose();
+      return true;
+    });
+  }, [isOpen, onClose]);
 
   if (!isOpen || !slip) return null;
 
