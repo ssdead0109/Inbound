@@ -65,7 +65,7 @@ export async function getErpPendingSlips(query?: string, limit: number = 50): Pr
       RTRIM(ISNULL(비고1, '')) AS 비고1,
       RTRIM(ISNULL(비고2, '')) AS 비고2
     FROM 미입고현황
-    WHERE (@query = '' OR slip_no LIKE @likeQ OR 거래처명 LIKE @likeQ OR 품목명 LIKE @likeQ OR 품목코드 LIKE @likeQ)
+    WHERE (@query = '' OR slip_no LIKE @likeQ OR 거래처명 LIKE @likeQ OR 품목명 LIKE @likeQ OR 품목코드 LIKE @likeQ OR 창고명 LIKE @likeQ)
     ORDER BY slip_no DESC, po_seq ASC
   `;
 

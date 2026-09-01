@@ -302,10 +302,10 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
                           onOpenPrintModal(slip);
                         }}
                         className="flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-slate-200 hover:border-indigo-300 rounded-lg text-2xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
-                        title="입하증 및 라벨 인쇄 (MMB202_Print)"
+                        title="인쇄"
                       >
                         <Printer className="w-3.5 h-3.5" />
-                        <span>입하증 인쇄</span>
+                        <span>인쇄</span>
                       </button>
 
                       <span className="font-mono text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
@@ -451,19 +451,6 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
                       </p>
                     )}
 
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 flex-wrap gap-2">
-                      <span className="text-[11px] text-slate-400 font-mono">
-                        ERP SP: MMB202_Print 연동
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onOpenPrintModal(slip)}
-                        className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs border border-indigo-200 transition-all cursor-pointer shadow-2xs"
-                      >
-                        <Printer className="w-4 h-4" />
-                        <span>입하증(MMB202_Print) / 라벨 인쇄</span>
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>

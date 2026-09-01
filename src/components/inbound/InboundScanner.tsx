@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
   Camera,
@@ -10,6 +10,8 @@ import {
   Package,
   Calendar,
   ChevronRight,
+  ChevronDown,
+  Warehouse,
   Boxes,
   Sparkles,
   Filter,
@@ -38,6 +40,11 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
   const [filterText, setFilterText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+
+  // Remember selected warehouse in localStorage
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>(() => {
+    return localStorage.getItem('kcp_inbound_selected_wh') || 'ALL';
+  });
   const isNativeApp = Capacitor.isNativePlatform();
 
   const barcodeBufferRef = useRef<{ buffer: string; lastKeyTime: number }>({
@@ -157,14 +164,41 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleScannedText]);
 
-  // Filtered Pending Slips (uses unified search bar)
+  // Extract unique warehouses from pending slips
+  const availableWarehouses = useMemo(() => {
+    const set = new Set<string>();
+    pendingSlips.forEach((s) => {
+      s.items.forEach((it) => {
+        if (it.warehouse && it.warehouse.trim()) {
+          set.add(it.warehouse.trim());
+        }
+      });
+    });
+    if (set.size === 0) {
+      return ['특장자재창고', '함안자재창고', '화성자재창고', '본관 자재1창고', '본관 자재2창고'];
+    }
+    return Array.from(set).sort();
+  }, [pendingSlips]);
+
+  // Filtered Pending Slips (창고 선택 필터 + 통합 검색 지원)
   const filteredSlips = pendingSlips.filter((slip) => {
+    // 1. Warehouse dropdown filter
+    if (selectedWarehouse !== 'ALL') {
+      const hasWh = slip.items.some((it) => it.warehouse === selectedWarehouse);
+      if (!hasWh) return false;
+    }
+    // 2. Search query filter (matches slipNo, supplierName, itemCode, itemName, AND warehouse!)
     const q = (manualInput || filterText).trim().toLowerCase();
     if (!q) return true;
     return (
       slip.slipNo.toLowerCase().includes(q) ||
       slip.supplierName.toLowerCase().includes(q) ||
-      slip.items.some((it) => it.itemName.toLowerCase().includes(q) || it.itemCode.toLowerCase().includes(q))
+      slip.items.some(
+        (it) =>
+          it.itemName.toLowerCase().includes(q) ||
+          it.itemCode.toLowerCase().includes(q) ||
+          (it.warehouse && it.warehouse.toLowerCase().includes(q))
+      )
     );
   });
 
@@ -188,7 +222,7 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
         </div>
       </div>
 
-      {/* 2. Unified Sticky Search & Camera Bar */}
+      {/* 2. Unified Sticky Search, Warehouse Filter & Camera Bar */}
       <div
         style={{ top: 'var(--app-header-h, 56px)' }}
         className="sticky z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs"
@@ -208,7 +242,28 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
             </button>
           )}
 
-          {/* Unified Search Input */}
+          {/* Warehouse Dropdown Listbox (창고 선택 기억 기능) */}
+          <div className="w-full sm:w-52 shrink-0 relative">
+            <select
+              value={selectedWarehouse}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedWarehouse(val);
+                localStorage.setItem('kcp_inbound_selected_wh', val);
+              }}
+              className="w-full h-11 sm:h-12 pl-3.5 pr-8 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer"
+            >
+              <option value="ALL">🏢 전체 창고</option>
+              {availableWarehouses.map((wh) => (
+                <option key={wh} value={wh}>
+                  🏢 {wh}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          {/* Unified Search Input (창고명으로도 검색 가능) */}
           <form onSubmit={handleManualSubmit} className="flex items-center gap-2 flex-1 w-full">
             <div className="relative flex-1 w-full">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
@@ -216,7 +271,7 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
                 type="text"
                 value={manualInput}
                 onChange={(e) => setManualInput(e.target.value)}
-                placeholder="납품전표번호, 공급처, 품목명을 검색하세요..."
+                placeholder="전표번호, 공급처, 품목명, 창고명 검색..."
                 className="w-full h-11 sm:h-12 pl-10 pr-9 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 font-mono transition-all"
               />
               {manualInput && (
@@ -310,10 +365,16 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
                     <span className="truncate">{slip.supplierName}</span>
                   </div>
 
-                  {/* Delivery Date & Memo */}
-                  <div className="flex items-center space-x-1.5 text-slate-500 text-xs mt-1">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>납기일: {slip.deliveryDate || '미지정'}</span>
+                  {/* Delivery Date & Right-Aligned Warehouse */}
+                  <div className="flex items-center justify-between text-xs text-slate-500 mt-1 gap-1">
+                    <div className="flex items-center space-x-1.5 min-w-0">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">납기일: {slip.deliveryDate || '미지정'}</span>
+                    </div>
+                    <div className="flex items-center space-x-1 text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md font-semibold text-[11px] shrink-0 truncate max-w-[150px]">
+                      <Warehouse className="w-3 h-3 text-indigo-500 shrink-0" />
+                      <span className="truncate">{slip.items[0]?.warehouse || '특장자재창고'}</span>
+                    </div>
                   </div>
 
                   {/* Items Summary Preview */}

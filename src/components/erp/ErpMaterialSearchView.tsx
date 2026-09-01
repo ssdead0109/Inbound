@@ -30,6 +30,8 @@ import {
   saveMaterialsToIndexedDb,
   searchMaterialsInIndexedDb
 } from '../../utils/indexedDbHelper';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 
 interface ErpMaterialSearchViewProps {
   onShowToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -63,6 +65,31 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
     }, 150);
     return () => clearTimeout(handler);
   }, [searchTerm]);
+
+  // Handle Android back button when viewing detail or print modal
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    if (!selectedCode && !qrPrintItem) return;
+
+    let listener: any = null;
+    CapApp.addListener('backButton', () => {
+      if (qrPrintItem) {
+        setQrPrintItem(null);
+        return;
+      }
+      if (selectedCode) {
+        setSelectedCode(null);
+        setDetailData(null);
+        return;
+      }
+    }).then((l) => {
+      listener = l;
+    });
+
+    return () => {
+      if (listener) listener.remove();
+    };
+  }, [selectedCode, qrPrintItem]);
 
   // Load Status and Warehouses on mount
   useEffect(() => {

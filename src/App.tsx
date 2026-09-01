@@ -14,6 +14,8 @@ import * as inboundApi from './api/inbound';
 import * as erpApi from './api/erpApi';
 import { ParsedQrResult } from './utils/inboundQrParser';
 import { soundHelper } from './utils/soundHelper';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 
 import { InboundNavbar } from './components/inbound/InboundNavbar';
 import { InboundScanner } from './components/inbound/InboundScanner';
@@ -85,6 +87,45 @@ export default function App() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
   };
+
+  // Android Hardware Back Button Handler (검수 화면 및 모달에서 뒤로가기 시 앱 꺼짐 방지)
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    let listener: any = null;
+    CapApp.addListener('backButton', () => {
+      // 1. If print modal or simulator is open -> close modal
+      if (isPrintModalOpen) {
+        setIsPrintModalOpen(false);
+        return;
+      }
+      if (isSimulatorOpen) {
+        setIsSimulatorOpen(false);
+        return;
+      }
+      // 2. If in inspection view ('RECEIVING') -> safely return to scanner/pending list
+      if (currentTab === 'RECEIVING') {
+        setCurrentTab('SCANNER');
+        setActiveSlip(null);
+        return;
+      }
+      // 3. If in another tab ('HISTORY', 'PURCHASE_ORDERS', 'ERP_SEARCH') -> return to home tab ('SCANNER')
+      if (currentTab !== 'SCANNER') {
+        setCurrentTab('SCANNER');
+        return;
+      }
+      // 4. If already on top-level home screen -> minimize or exit app
+      CapApp.exitApp();
+    }).then((l) => {
+      listener = l;
+    });
+
+    return () => {
+      if (listener) {
+        listener.remove();
+      }
+    };
+  }, [isPrintModalOpen, isSimulatorOpen, currentTab]);
 
   // Load Slips, Stats and Warehouses from Backend (통합 ERP 실시간 미입고 & 입고내역 연동)
   const loadInitialData = useCallback(async () => {
