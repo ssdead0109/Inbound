@@ -18,7 +18,8 @@ import {
   X,
   Eye,
   Upload,
-  ZoomIn
+  ZoomIn,
+  Database
 } from 'lucide-react';
 import { InboundSlip, InboundItem, InboundReceivePayload } from '../../types/inbound';
 import { soundHelper } from '../../utils/soundHelper';
@@ -283,6 +284,13 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
           <ArrowLeft className="w-4 h-4" />
           <span>QR 스캔으로 돌아가기</span>
         </button>
+
+        {(slip.supplierCode?.startsWith('SUP-ERP') || slip.slipNo.length === 11 || !slip.slipNo.startsWith('DN-')) && (
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold shadow-2xs">
+            <Database className="w-3.5 h-3.5 text-emerald-600" />
+            <span>ERP(MSSQL) 실시간 입고 모드</span>
+          </span>
+        )}
       </div>
 
       {/* Slip Master Overview Card (Simplified with small, balanced typography) */}

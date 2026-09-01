@@ -199,4 +199,55 @@ router.post('/import-item', (req: Request, res: Response) => {
   }
 });
 
+// GET /api/erp/inbound/pending-slips - ERP '미입고현황' 실시간 미입고 전표 목록
+router.get('/inbound/pending-slips', async (req: Request, res: Response) => {
+  try {
+    const { getErpPendingSlips } = await import('../db/erpInboundDb');
+    const query = typeof req.query.query === 'string' ? req.query.query : undefined;
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '50', 10), 1), 100);
+
+    const slips = await getErpPendingSlips(query, limit);
+    res.json({
+      success: true,
+      count: slips.length,
+      data: slips,
+    });
+  } catch (err: any) {
+    console.error('[ERP Inbound Slips Error]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/erp/inbound/slips/:slipNo - ERP 단건 전표 조회 (QR 스캔 실시간 매칭용)
+router.get('/inbound/slips/:slipNo', async (req: Request, res: Response) => {
+  try {
+    const { getErpSlipByNo } = await import('../db/erpInboundDb');
+    const slip = await getErpSlipByNo(req.params.slipNo);
+    if (!slip) {
+      return res.status(404).json({
+        success: false,
+        message: `사내 ERP 미입고현황에서 전표 [${req.params.slipNo}]를 찾을 수 없습니다.`,
+      });
+    }
+    res.json({ success: true, data: slip });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/erp/inbound/receive - ERP 실시간 입고 확정 및 MT_T_입출고 INSERT
+router.post('/inbound/receive', async (req: Request, res: Response) => {
+  try {
+    const { processErpInboundReceive } = await import('../db/erpInboundDb');
+    const result = await processErpInboundReceive(req.body);
+    res.json({
+      success: true,
+      ...result,
+    });
+  } catch (err: any) {
+    console.error('[ERP Inbound Receive Error]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 export default router;

@@ -1,3 +1,6 @@
+import { InboundSlip, InboundReceivePayload } from '../types/inbound';
+import { StockLog } from '../types/inventory';
+
 export interface ErpStatus {
   isConnected: boolean;
   server: string;
@@ -88,6 +91,52 @@ export async function importErpMaterialToLocal(payload: {
   const json = await res.json();
   if (!res.ok && res.status !== 409) {
     throw new Error(json.message || '스마트랙 자재 등록 실패');
+  }
+  return json;
+}
+
+/**
+ * ERP MSSQL '미입고현황' 실시간 미입고 전표 목록 조회
+ */
+export async function fetchErpPendingSlips(query?: string, limit: number = 50): Promise<InboundSlip[]> {
+  const params = new URLSearchParams();
+  if (query) params.set('query', query);
+  params.set('limit', limit.toString());
+
+  const res = await fetch(`${API_BASE}/inbound/pending-slips?${params.toString()}`);
+  if (!res.ok) throw new Error('ERP 미입고 전표 목록 조회 실패');
+  const json = await res.json();
+  return json.data || [];
+}
+
+/**
+ * ERP MSSQL 단건 전표 조회 (QR 스캔 실시간 매칭)
+ */
+export async function fetchErpSlipByNo(slipNo: string): Promise<InboundSlip> {
+  const res = await fetch(`${API_BASE}/inbound/slips/${encodeURIComponent(slipNo.trim())}`);
+  if (!res.ok) throw new Error('사내 ERP에서 전표를 찾을 수 없습니다.');
+  const json = await res.json();
+  return json.data;
+}
+
+/**
+ * ERP MSSQL 실시간 입고 확정 및 MT_T_입출고 INSERT
+ */
+export async function processErpInboundReceive(payload: InboundReceivePayload): Promise<{
+  success: boolean;
+  insertedCount: number;
+  slip: InboundSlip;
+  logs: StockLog[];
+  message: string;
+}> {
+  const res = await fetch(`${API_BASE}/inbound/receive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || json.message || 'ERP 실시간 입고 처리 실패');
   }
   return json;
 }

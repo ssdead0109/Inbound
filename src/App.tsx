@@ -11,6 +11,7 @@ import {
   InboundReceivePayload,
 } from './types/inbound';
 import * as inboundApi from './api/inbound';
+import * as erpApi from './api/erpApi';
 import { ParsedQrResult } from './utils/inboundQrParser';
 import { soundHelper } from './utils/soundHelper';
 
@@ -134,41 +135,80 @@ export default function App() {
 
     // 2. If it's a Slip Number
     if (result.slipNo) {
+      // Try local slip first
       try {
         const slip = await inboundApi.fetchInboundSlipByNo(result.slipNo);
         setActiveSlip(slip);
         setCurrentTab('RECEIVING');
         showToast(`납품확인서 [${slip.slipNo}] 조회 완료! 검수를 시작합니다.`, 'success');
-      } catch (err: any) {
-        soundHelper.playErrorBuzzer();
-        showToast(err.message || `전표 [${result.slipNo}]를 찾을 수 없습니다.`, 'error');
+        return;
+      } catch {
+        // Fallback to ERP '미입고현황' real-time search
+        try {
+          const erpSlip = await erpApi.fetchErpSlipByNo(result.slipNo);
+          setActiveSlip(erpSlip);
+          setCurrentTab('RECEIVING');
+          showToast(`사내 ERP 미입고 전표 [${erpSlip.slipNo}] 조회 완료! 실시간 입고 검수를 시작합니다.`, 'success');
+          return;
+        } catch (erpErr: any) {
+          soundHelper.playErrorBuzzer();
+          showToast(`전표 [${result.slipNo}]를 로컬 및 사내 ERP에서 찾을 수 없습니다.`, 'error');
+          return;
+        }
       }
-      return;
     }
 
     showToast(`스캔된 코드 [${result.rawText}]에 해당하는 정보를 찾을 수 없습니다.`, 'error');
   };
 
-  // Select Pending Slip to Inspect
-  const handleSelectPendingSlip = async (slipNo: string) => {
+  // Select Pending Slip to Inspect (supports direct ERP slip object)
+  const handleSelectPendingSlip = async (slipNo: string, directSlip?: InboundSlip) => {
+    if (directSlip) {
+      setActiveSlip(directSlip);
+      setCurrentTab('RECEIVING');
+      return;
+    }
+
     try {
       const slip = await inboundApi.fetchInboundSlipByNo(slipNo);
       setActiveSlip(slip);
       setCurrentTab('RECEIVING');
-    } catch (err: any) {
-      showToast(err.message || '전표 조회 실패', 'error');
+    } catch {
+      try {
+        const erpSlip = await erpApi.fetchErpSlipByNo(slipNo);
+        setActiveSlip(erpSlip);
+        setCurrentTab('RECEIVING');
+      } catch (err: any) {
+        showToast(err.message || '전표 조회 실패', 'error');
+      }
     }
   };
 
-  // Confirm Inbound Receiving Transaction
+  // Confirm Inbound Receiving Transaction (supports real-time MSSQL MT_T_입출고 insert)
   const handleConfirmReceiving = async (payload: InboundReceivePayload) => {
     try {
-      const result = await inboundApi.processInboundReceive(payload);
-      soundHelper.playSuccessChime();
-      showToast(result.message || '입고 처리가 완료되었습니다!', 'success');
-      
+      const isErpSlip = activeSlip?.supplierCode?.startsWith('SUP-ERP') ||
+                        (activeSlip && activeSlip.slipNo.length === 11) ||
+                        (activeSlip && !activeSlip.slipNo.startsWith('DN-'));
+
+      let resultSlip: InboundSlip;
+
+      if (isErpSlip) {
+        // Real-time ERP MSSQL Inbound Receive
+        const erpRes = await erpApi.processErpInboundReceive(payload);
+        soundHelper.playSuccessChime();
+        showToast(erpRes.message || '사내 ERP(MSSQL) 입고 처리가 완료되었습니다!', 'success');
+        resultSlip = erpRes.slip;
+      } else {
+        // Standard Local Inbound Receive
+        const localRes = await inboundApi.processInboundReceive(payload);
+        soundHelper.playSuccessChime();
+        showToast(localRes.message || '입고 처리가 완료되었습니다!', 'success');
+        resultSlip = localRes.slip;
+      }
+
       await loadInitialData();
-      setActiveSlip(result.slip);
+      setActiveSlip(resultSlip);
       setCurrentTab('HISTORY');
     } catch (err: any) {
       soundHelper.playErrorBuzzer();
