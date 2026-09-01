@@ -4,7 +4,8 @@ import {
   Clock,
   History,
   User,
-  RotateCcw
+  RotateCcw,
+  Database
 } from 'lucide-react';
 import { InboundViewTab } from '../../types/inbound';
 
@@ -104,6 +105,18 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
             >
               <History className="w-4 h-4" />
               <span>입고 내역</span>
+            </button>
+
+            <button
+              onClick={() => onSelectTab('ERP_SEARCH')}
+              className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                currentTab === 'ERP_SEARCH'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              <Database className="w-4 h-4 text-emerald-400" />
+              <span>ERP 자재조회</span>
             </button>
           </nav>
 

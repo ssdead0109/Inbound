@@ -1,11 +1,14 @@
 /**
  * SmartRack / Inbound - MSSQL Server Database Adapter
- * 사내 ERP MSSQL Server 연결 및 쿼리 실행 추상화 모듈
+ * 사내 ERP MSSQL Server 실시간 연결 및 쿼리 실행 모듈
  */
+import sql from 'mssql';
+import dotenv from 'dotenv';
+dotenv.config();
 
 export interface MssqlConfig {
   server: string;
-  port?: number;
+  port: number;
   user: string;
   password?: string;
   database: string;
@@ -16,11 +19,11 @@ export interface MssqlConfig {
 }
 
 export const DEFAULT_MSSQL_CONFIG: MssqlConfig = {
-  server: process.env.MSSQL_SERVER || 'localhost',
+  server: process.env.MSSQL_SERVER || '127.0.0.1',
   port: parseInt(process.env.MSSQL_PORT || '1433', 10),
-  user: process.env.MSSQL_USER || 'sa',
+  user: process.env.MSSQL_USER || '',
   password: process.env.MSSQL_PASSWORD || '',
-  database: process.env.MSSQL_DATABASE || 'SmartRackInboundDB',
+  database: process.env.MSSQL_DATABASE || '',
   options: {
     encrypt: process.env.MSSQL_ENCRYPT === 'true',
     trustServerCertificate: true,
@@ -28,6 +31,7 @@ export const DEFAULT_MSSQL_CONFIG: MssqlConfig = {
 };
 
 export class MssqlAdapter {
+  private pool: sql.ConnectionPool | null = null;
   private isConnected = false;
   private config: MssqlConfig;
 
@@ -37,45 +41,76 @@ export class MssqlAdapter {
 
   public async connect(): Promise<boolean> {
     try {
-      console.log(`[MSSQL] Attempting connection to ${this.config.server}:${this.config.port}/${this.config.database}...`);
-      // Note: When 'mssql' package is installed (e.g. npm install mssql @types/mssql),
-      // pool connection will be initialized here.
+      if (this.pool && this.isConnected) {
+        return true;
+      }
+      console.log(`[MSSQL] Connecting to ${this.config.server}:${this.config.port}/${this.config.database} (User: ${this.config.user})...`);
+      
+      const sqlConfig: sql.config = {
+        server: this.config.server,
+        port: this.config.port,
+        user: this.config.user,
+        password: this.config.password,
+        database: this.config.database,
+        options: {
+          encrypt: this.config.options?.encrypt ?? false,
+          trustServerCertificate: this.config.options?.trustServerCertificate ?? true,
+        },
+        connectionTimeout: 5000,
+        requestTimeout: 15000,
+        pool: {
+          max: 10,
+          min: 0,
+          idleTimeoutMillis: 30000,
+        },
+      };
+
+      this.pool = await new sql.ConnectionPool(sqlConfig).connect();
       this.isConnected = true;
+      console.log(`[MSSQL] ✅ Connected successfully to ${this.config.database}!`);
       return true;
-    } catch (err) {
-      console.error('[MSSQL] Connection failed:', err);
+    } catch (err: any) {
+      console.error(`[MSSQL] ❌ Connection failed:`, err.message);
       this.isConnected = false;
+      this.pool = null;
       return false;
     }
   }
 
-  public getStatus(): { isConnected: boolean; server: string; database: string } {
+  public async query<T = any>(sqlQuery: string, params?: Record<string, any>): Promise<T[]> {
+    if (!this.isConnected || !this.pool) {
+      const ok = await this.connect();
+      if (!ok) throw new Error('MSSQL 데이터베이스에 연결되어 있지 않습니다.');
+    }
+
+    const request = this.pool!.request();
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        request.input(key, value);
+      }
+    }
+
+    const result = await request.query(sqlQuery);
+    return result.recordset as T[];
+  }
+
+  public getStatus() {
     return {
       isConnected: this.isConnected,
       server: this.config.server,
+      port: this.config.port,
+      user: this.config.user,
       database: this.config.database,
     };
   }
 
-  // Prepared SQL Templates for ERP integration
-  public static readonly QUERIES = {
-    SELECT_SLIP_BY_NO: `
-      SELECT S.*, I.ROW_ID, I.ITEM_CODE, I.ITEM_NAME, I.SPEC, I.UNIT,
-             I.ORDER_QTY, I.RECEIVED_QTY, I.DEFECT_QTY, I.DEFECT_REASON,
-             I.WAREHOUSE, I.RACK_LOCATION, I.UNIT_PRICE, I.ITEM_STATUS, I.BARCODE
-      FROM TB_INBOUND_SLIPS S
-      LEFT JOIN TB_INBOUND_ITEMS I ON S.SLIP_NO = I.SLIP_NO
-      WHERE S.SLIP_NO = @slipNo OR S.PO_NUMBER = @slipNo
-    `,
-    SELECT_TODAY_SLIPS: `
-      SELECT * FROM TB_INBOUND_SLIPS
-      WHERE DELIVERY_DATE = CAST(GETDATE() AS DATE)
-      ORDER BY CREATED_AT DESC
-    `,
-    EXEC_RECEIVE_SP: `
-      EXEC SP_PROCESS_INBOUND_RECEIVE @SlipNo = @slipNo, @Manager = @manager, @Memo = @memo
-    `,
-  };
+  public async close() {
+    if (this.pool) {
+      await this.pool.close();
+      this.pool = null;
+      this.isConnected = false;
+    }
+  }
 }
 
 export const mssqlAdapter = new MssqlAdapter();

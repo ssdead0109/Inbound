@@ -9,6 +9,7 @@ import logsRouter from './routes/logs';
 import stockRouter from './routes/stock';
 import configRouter from './routes/config';
 import inboundRouter from './routes/inbound';
+import erpRouter from './routes/erp';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -36,6 +37,7 @@ app.get('/api/health', (_req, res) => {
 
 // API Routes
 app.use('/api/inbound', inboundRouter);
+app.use('/api/erp', erpRouter);
 app.use('/api/items', itemsRouter);
 app.use('/api/logs', logsRouter);
 app.use('/api/stock', stockRouter);

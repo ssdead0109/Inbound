@@ -21,13 +21,15 @@ import { InboundPendingList } from './components/inbound/InboundPendingList';
 import { InboundHistoryView } from './components/inbound/InboundHistoryView';
 import { InboundSimulatorModal } from './components/inbound/InboundSimulatorModal';
 import { InboundSlipPrintModal } from './components/inbound/InboundSlipPrintModal';
+import { ErpMaterialSearchView } from './components/erp/ErpMaterialSearchView';
 
 import {
   QrCode,
   Clock,
   History,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Database
 } from 'lucide-react';
 
 export default function App() {
@@ -280,6 +282,10 @@ export default function App() {
             onSelectSlip={handleSelectPendingSlip}
           />
         )}
+
+        {currentTab === 'ERP_SEARCH' && (
+          <ErpMaterialSearchView onShowToast={showToast} />
+        )}
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
@@ -326,6 +332,19 @@ export default function App() {
             <History className="w-4 h-4" />
           </div>
           <span>입고 내역</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCurrentTab('ERP_SEARCH')}
+          className={`flex flex-col items-center space-y-0.5 transition-all cursor-pointer ${
+            currentTab === 'ERP_SEARCH' ? 'text-indigo-600 font-bold' : 'hover:text-slate-900'
+          }`}
+        >
+          <div className={`p-1.5 rounded-lg ${currentTab === 'ERP_SEARCH' ? 'bg-indigo-50' : ''}`}>
+            <Database className="w-4 h-4 text-emerald-600" />
+          </div>
+          <span>ERP 자재</span>
         </button>
       </div>
 
