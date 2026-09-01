@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'KCP SmartRack',
   webDir: 'dist',
   server: {
-    url: 'https://192.168.2.29:3005',
+    url: 'http://192.168.2.29:3005',
     cleartext: true
   }
 };
