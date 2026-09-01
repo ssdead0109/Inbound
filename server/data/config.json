@@ -1,0 +1,23 @@
+{
+  "presetId": "any_v3310",
+  "widthMm": 63.5,
+  "heightMm": 33.9,
+  "cols": 3,
+  "rows": 8,
+  "marginTopMm": 12.9,
+  "marginLeftMm": 7.2,
+  "gapXMm": 2.5,
+  "gapYMm": 0,
+  "layout": "portrait",
+  "showNotes": true,
+  "showLocationBadge": false,
+  "showPrice": false,
+  "showSupplier": true,
+  "showBorderCutGuide": false,
+  "showDate": true,
+  "showItemCodeBarcode": true,
+  "showCompanyName": false,
+  "companyName": "SMART RACK SYSTEM",
+  "fontSize": "large",
+  "qrIncludeDetails": true
+}

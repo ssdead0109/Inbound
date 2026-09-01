@@ -1,0 +1,341 @@
+/**
+ * KCP 자재입고 시스템
+ * QR코드 기반 실시간 납품확인서 검수 및 입고처리 (PC & Mobile PWA)
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  InboundSlip,
+  InboundViewTab,
+  InboundStats,
+  InboundReceivePayload,
+} from './types/inbound';
+import * as inboundApi from './api/inbound';
+import { ParsedQrResult } from './utils/inboundQrParser';
+import { soundHelper } from './utils/soundHelper';
+
+import { InboundNavbar } from './components/inbound/InboundNavbar';
+import { InboundScanner } from './components/inbound/InboundScanner';
+import { InboundReceivingView } from './components/inbound/InboundReceivingView';
+import { InboundPendingList } from './components/inbound/InboundPendingList';
+import { InboundHistoryView } from './components/inbound/InboundHistoryView';
+import { InboundSimulatorModal } from './components/inbound/InboundSimulatorModal';
+import { InboundSlipPrintModal } from './components/inbound/InboundSlipPrintModal';
+
+import {
+  QrCode,
+  Clock,
+  History,
+  CheckCircle2,
+  AlertCircle
+} from 'lucide-react';
+
+export default function App() {
+  // Main Navigation Tab
+  const [currentTab, setCurrentTab] = useState<InboundViewTab>('SCANNER');
+
+  // Slips, Stats & Warehouses State
+  const [slips, setSlips] = useState<InboundSlip[]>([]);
+  const [stats, setStats] = useState<InboundStats | null>(null);
+  const [warehouses, setWarehouses] = useState<string[]>(['특장자재창고', '본관 자재1창고', '본관 자재2창고', '외주 가공자재창고', '원자재 야적장']);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Active Slip currently being inspected
+  const [activeSlip, setActiveSlip] = useState<InboundSlip | null>(null);
+
+  // Operator
+  const [operator, setOperator] = useState<string>(() => {
+    return localStorage.getItem('kcp_operator') || '홍길동 (자재과장)';
+  });
+
+  // Modal States
+  const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [slipToPrint, setSlipToPrint] = useState<InboundSlip | null>(null);
+
+  // Toast Notification
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  // Load Slips, Stats and Warehouses from Backend
+  const loadInitialData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const [fetchedSlips, fetchedStats, fetchedWh] = await Promise.all([
+        inboundApi.fetchInboundSlips(),
+        inboundApi.fetchInboundStats().catch(() => null),
+        inboundApi.fetchWarehouses().catch(() => []),
+      ]);
+      setSlips(fetchedSlips);
+      if (fetchedStats) setStats(fetchedStats);
+      if (fetchedWh && fetchedWh.length > 0) setWarehouses(fetchedWh);
+    } catch (err: any) {
+      console.warn('Failed fetching inbound data:', err);
+      showToast(err.message || '서버 데이터 조회에 실패했습니다.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
+
+  // Check URL query / hash for deep link
+  useEffect(() => {
+    const handleUrlHash = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const slipParam = urlParams.get('slipNo') || urlParams.get('slip') || window.location.hash.replace('#', '');
+
+      if (slipParam && slipParam.startsWith('DN-')) {
+        try {
+          const slip = await inboundApi.fetchInboundSlipByNo(slipParam);
+          setActiveSlip(slip);
+          setCurrentTab('RECEIVING');
+          showToast(`납품확인서 [${slip.slipNo}]를 불러왔습니다.`, 'success');
+        } catch {
+          // Ignore
+        }
+      }
+    };
+    handleUrlHash();
+  }, []);
+
+  // Save operator change
+  const handleOperatorChange = (newOp: string) => {
+    setOperator(newOp);
+    localStorage.setItem('kcp_operator', newOp);
+    showToast(`담당자가 '${newOp}'(으)로 변경되었습니다.`, 'info');
+  };
+
+  // Handle QR Scan Result
+  const handleScanSuccess = async (result: ParsedQrResult) => {
+    soundHelper.playScanBeep();
+
+    // 1. If QR contains full JSON slip data or Delimited format
+    if (result.directSlipData) {
+      try {
+        const registered = await inboundApi.createInboundSlipApi(result.directSlipData);
+        await loadInitialData();
+        setActiveSlip(registered);
+        setCurrentTab('RECEIVING');
+        showToast(`납품확인서 [${registered.slipNo}] 스캔 성공! 검수를 시작합니다.`, 'success');
+        return;
+      } catch (err: any) {
+        console.warn('Error saving direct slip:', err);
+      }
+    }
+
+    // 2. If it's a Slip Number
+    if (result.slipNo) {
+      try {
+        const slip = await inboundApi.fetchInboundSlipByNo(result.slipNo);
+        setActiveSlip(slip);
+        setCurrentTab('RECEIVING');
+        showToast(`납품확인서 [${slip.slipNo}] 조회 완료! 검수를 시작합니다.`, 'success');
+      } catch (err: any) {
+        soundHelper.playErrorBuzzer();
+        showToast(err.message || `전표 [${result.slipNo}]를 찾을 수 없습니다.`, 'error');
+      }
+      return;
+    }
+
+    showToast(`스캔된 코드 [${result.rawText}]에 해당하는 정보를 찾을 수 없습니다.`, 'error');
+  };
+
+  // Select Pending Slip to Inspect
+  const handleSelectPendingSlip = async (slipNo: string) => {
+    try {
+      const slip = await inboundApi.fetchInboundSlipByNo(slipNo);
+      setActiveSlip(slip);
+      setCurrentTab('RECEIVING');
+    } catch (err: any) {
+      showToast(err.message || '전표 조회 실패', 'error');
+    }
+  };
+
+  // Confirm Inbound Receiving Transaction
+  const handleConfirmReceiving = async (payload: InboundReceivePayload) => {
+    try {
+      const result = await inboundApi.processInboundReceive(payload);
+      soundHelper.playSuccessChime();
+      showToast(result.message || '입고 처리가 완료되었습니다!', 'success');
+      
+      await loadInitialData();
+      setActiveSlip(result.slip);
+      setCurrentTab('HISTORY');
+    } catch (err: any) {
+      soundHelper.playErrorBuzzer();
+      showToast(err.message || '입고 처리 중 오류가 발생했습니다.', 'error');
+      throw err;
+    }
+  };
+
+  // Hold Slip
+  const handleHoldSlip = async (slipNo: string, memo: string) => {
+    try {
+      const updated = await inboundApi.updateInboundSlipStatusApi(slipNo, 'HOLD', memo);
+      showToast(`납품확인서 [${slipNo}]가 보류 처리되었습니다.`, 'info');
+      await loadInitialData();
+      setActiveSlip(updated);
+      setCurrentTab('PENDING');
+    } catch (err: any) {
+      showToast(err.message || '보류 처리 실패', 'error');
+    }
+  };
+
+  // Reset Sample Delivery Slips
+  const handleResetSamples = async () => {
+    if (!window.confirm('기본 5종 샘플 납품확인서 데이터로 초기화하시겠습니까?')) return;
+    try {
+      await inboundApi.resetInboundSamplesApi();
+      await loadInitialData();
+      showToast('샘플 납품확인서가 초기화되었습니다.', 'success');
+    } catch (err: any) {
+      showToast(err.message || '초기화 실패', 'error');
+    }
+  };
+
+  // Open Print Modal (if opened from History)
+  const handleOpenPrintModal = (slip: InboundSlip) => {
+    setSlipToPrint(slip);
+    setIsPrintModalOpen(true);
+  };
+
+  const pendingCount = slips.filter((s) => s.status === 'WAITING' || s.status === 'INSPECTING').length;
+
+  return (
+    <div
+      style={{ backgroundColor: '#f8fafc', color: '#0f172a', colorScheme: 'light' }}
+      className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans antialiased w-full max-w-full overflow-x-hidden"
+    >
+      
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed top-16 right-3 sm:right-6 z-50 animate-in slide-in-from-top-2 duration-200">
+          <div className={`px-4 py-2.5 rounded-xl shadow-lg border flex items-center space-x-2 text-xs font-bold ${
+            toast.type === 'success'
+              ? 'bg-white text-emerald-700 border-emerald-300 shadow-emerald-100/50'
+              : toast.type === 'error'
+              ? 'bg-white text-rose-700 border-rose-300 shadow-rose-100/50'
+              : 'bg-white text-indigo-700 border-indigo-300 shadow-indigo-100/50'
+          }`}>
+            {toast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Main Top Navbar (KCP 자재입고) */}
+      <InboundNavbar
+        currentTab={currentTab}
+        onSelectTab={setCurrentTab}
+        pendingCount={pendingCount}
+        operator={operator}
+        onChangeOperator={handleOperatorChange}
+        onResetSamples={handleResetSamples}
+      />
+
+      {/* Main Workspace Body */}
+      <main className="flex-1 pb-16 md:pb-6 w-full max-w-full overflow-x-hidden">
+        {currentTab === 'SCANNER' && (
+          <InboundScanner
+            onScanSuccess={handleScanSuccess}
+            pendingSlips={slips.filter((s) => s.status === 'WAITING' || s.status === 'INSPECTING')}
+            onSelectPendingSlip={handleSelectPendingSlip}
+          />
+        )}
+
+        {currentTab === 'RECEIVING' && activeSlip && (
+          <InboundReceivingView
+            slip={activeSlip}
+            operator={operator}
+            warehouses={warehouses}
+            onConfirmReceiving={handleConfirmReceiving}
+            onHoldSlip={handleHoldSlip}
+            onBackToScanner={() => setCurrentTab('SCANNER')}
+          />
+        )}
+
+        {currentTab === 'PENDING' && (
+          <InboundPendingList
+            slips={slips}
+            onSelectSlip={handleSelectPendingSlip}
+            onOpenScanner={() => setCurrentTab('SCANNER')}
+          />
+        )}
+
+        {currentTab === 'HISTORY' && (
+          <InboundHistoryView
+            slips={slips}
+            onOpenPrintModal={handleOpenPrintModal}
+            onSelectSlip={handleSelectPendingSlip}
+          />
+        )}
+      </main>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 py-1.5 px-3 flex items-center justify-around text-[10px] font-bold text-slate-500 shadow-lg">
+        <button
+          type="button"
+          onClick={() => setCurrentTab('SCANNER')}
+          className={`flex flex-col items-center space-y-0.5 transition-all cursor-pointer ${
+            currentTab === 'SCANNER' ? 'text-indigo-600 font-bold' : 'hover:text-slate-900'
+          }`}
+        >
+          <div className={`p-1.5 rounded-lg ${currentTab === 'SCANNER' ? 'bg-indigo-50' : ''}`}>
+            <QrCode className="w-4 h-4" />
+          </div>
+          <span>QR 스캔</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCurrentTab('PENDING')}
+          className={`flex flex-col items-center space-y-0.5 transition-all relative cursor-pointer ${
+            currentTab === 'PENDING' ? 'text-indigo-600 font-bold' : 'hover:text-slate-900'
+          }`}
+        >
+          <div className={`p-1.5 rounded-lg ${currentTab === 'PENDING' ? 'bg-indigo-50' : ''}`}>
+            <Clock className="w-4 h-4" />
+          </div>
+          <span>입고 대기</span>
+          {pendingCount > 0 && (
+            <span className="absolute top-0.5 right-2 w-3.5 h-3.5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[9px] font-mono font-bold">
+              {pendingCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCurrentTab('HISTORY')}
+          className={`flex flex-col items-center space-y-0.5 transition-all cursor-pointer ${
+            currentTab === 'HISTORY' ? 'text-indigo-600 font-bold' : 'hover:text-slate-900'
+          }`}
+        >
+          <div className={`p-1.5 rounded-lg ${currentTab === 'HISTORY' ? 'bg-indigo-50' : ''}`}>
+            <History className="w-4 h-4" />
+          </div>
+          <span>입고 내역</span>
+        </button>
+      </div>
+
+      {/* Printable Inbound Receipt Modal (for History tab) */}
+      <InboundSlipPrintModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        slip={slipToPrint}
+      />
+
+    </div>
+  );
+}

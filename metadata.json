@@ -1,0 +1,6 @@
+{
+  "name": "SmartRack - 재고관리 및 랙 라벨 인쇄 시스템",
+  "description": "엑셀 연동, 80x60mm 랙 라벨 A4 최적화 인쇄, QR코드 스마트폰 모바일 재고 조회/입출고 및 중복 검증 시스템",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

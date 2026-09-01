@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light !important;
+  --color-scheme: light !important;
+}
+
+@utility text-2xs {
+  font-size: 0.6875rem;
+  line-height: 0.875rem;
+}
+
+@utility text-3xs {
+  font-size: 0.5625rem;
+  line-height: 0.75rem;
+}
+
+.text-2xs {
+  font-size: 0.6875rem !important;
+  line-height: 0.875rem !important;
+}
+
+@keyframes scanLaser {
+  0% {
+    top: 4%;
+    opacity: 0.3;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: 94%;
+    opacity: 0.3;
+  }
+}
+
+.animate-scan-line {
+  position: absolute;
+  animation: scanLaser 2s ease-in-out infinite alternate;
+}
+
+
+@layer base {
+  *, ::before, ::after {
+    color-scheme: light !important;
+  }
+
+  html, body {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    color-scheme: light !important;
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+    letter-spacing: -0.015em;
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+    touch-action: pan-y;
+    overscroll-behavior-x: none;
+  }
+
+  #root {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    color-scheme: light !important;
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+    min-height: 100vh;
+  }
+
+  code, kbd, samp, pre {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+}
+
+/* Force light colors even if mobile OS is set to Dark Mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: light !important;
+  }
+  html, body, #root {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    color-scheme: light !important;
+  }
+}
+
+/* Print specific styles */
+@page {
+  margin: 0mm !important;
+}
+
+@media print {
+  @page {
+    margin: 5mm !important;
+  }
+
+  /* Hide non-printable elements */
+  header, nav, footer, .no-print {
+    display: none !important;
+  }
+
+  body, html {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* Clean Light Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
