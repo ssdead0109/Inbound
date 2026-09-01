@@ -21,7 +21,16 @@ interface InboundLoginModalProps {
 }
 
 export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuccess }) => {
-  const [code, setCode] = useState('');
+  // Remember ID State
+  const [rememberId, setRememberId] = useState<boolean>(() => {
+    return localStorage.getItem('kcp_remember_id') === 'true';
+  });
+
+  const [code, setCode] = useState<string>(() => {
+    const isRemembered = localStorage.getItem('kcp_remember_id') === 'true';
+    return isRemembered ? (localStorage.getItem('kcp_saved_id') || '') : '';
+  });
+
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -48,6 +57,16 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
 
     try {
       const user = await loginErpUser(code.trim(), password);
+
+      // Handle Remember ID
+      if (rememberId) {
+        localStorage.setItem('kcp_remember_id', 'true');
+        localStorage.setItem('kcp_saved_id', code.trim());
+      } else {
+        localStorage.removeItem('kcp_remember_id');
+        localStorage.removeItem('kcp_saved_id');
+      }
+
       soundHelper.playSuccessChime();
       onLoginSuccess(user);
     } catch (err: any) {
@@ -63,6 +82,12 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
     setPassword('');
     setErrorMessage('');
     setShowQuickSelect(false);
+
+    // Handle Remember ID
+    if (rememberId) {
+      localStorage.setItem('kcp_remember_id', 'true');
+      localStorage.setItem('kcp_saved_id', user.code);
+    }
     
     // If user has no password, attempt direct login
     if (!user.hasPassword) {
@@ -93,7 +118,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
       <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-emerald-200/40 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-100/60 rounded-full blur-[120px] pointer-events-none" />
 
-      {/* Main Login Card (Crisp Light Theme) */}
+      {/* Main Login Card (Clean Light Theme) */}
       <div className="w-full max-w-md bg-white/95 backdrop-blur-xl border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6 relative z-10">
         
         {/* Header Branding */}
@@ -105,14 +130,14 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-700 font-bold mb-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>사내 ERP (System9) 실시간 연동</span>
+              <span>사내 ERP 실시간 연동</span>
             </div>
 
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
               KCP 자재입고 시스템
             </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              사내 ERP <span className="text-indigo-600 font-bold font-mono">MT_TC_담당자코드</span> 계정으로 로그인하세요
+            <p className="text-xs text-slate-500 mt-1 font-medium">
+              사내 ERP 담당자 계정으로 로그인하세요
             </p>
           </div>
         </div>
@@ -151,7 +176,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
                 type="text"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="예: jmgang, admin, 박영일"
+                placeholder="담당자코드(사번) 입력"
                 autoFocus
                 className="w-full bg-slate-50 text-slate-900 placeholder-slate-400 px-4 py-3 rounded-2xl border border-slate-300 focus:bg-white focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 text-sm font-medium transition-all"
               />
@@ -215,6 +240,19 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
             </div>
           </div>
 
+          {/* Remember ID Checkbox */}
+          <div className="flex items-center justify-between pt-0.5">
+            <label className="flex items-center space-x-2 text-xs font-semibold text-slate-600 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberId}
+                onChange={(e) => setRememberId(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer accent-indigo-600"
+              />
+              <span>아이디 저장</span>
+            </label>
+          </div>
+
           {/* Submit Button */}
           <button
             type="submit"
@@ -234,36 +272,6 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
             )}
           </button>
         </form>
-
-        {/* Quick Demo Credentials Footer */}
-        <div className="pt-3 border-t border-slate-100 space-y-2">
-          <div className="text-[11px] text-slate-500 text-center font-medium">
-            💡 빠른 테스트 추천 계정:
-          </div>
-          <div className="flex flex-wrap gap-1.5 justify-center">
-            <button
-              type="button"
-              onClick={() => { setCode('jmgang'); setPassword('kcp4800175'); }}
-              className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-[10px] text-slate-700 font-mono border border-slate-200 transition-all cursor-pointer"
-            >
-              특장: <strong>jmgang</strong> (강종만)
-            </button>
-            <button
-              type="button"
-              onClick={() => { setCode('admin'); setPassword('gong2004pass'); }}
-              className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-[10px] text-slate-700 font-mono border border-slate-200 transition-all cursor-pointer"
-            >
-              관리자: <strong>admin</strong> (개발자)
-            </button>
-            <button
-              type="button"
-              onClick={() => { setCode('rkdtjrrb1'); setPassword(''); }}
-              className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-[10px] text-slate-700 font-mono border border-slate-200 transition-all cursor-pointer"
-            >
-              자재: <strong>rkdtjrrb1</strong> (강석규)
-            </button>
-          </div>
-        </div>
 
       </div>
 
