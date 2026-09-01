@@ -11,7 +11,6 @@ import {
   FileSpreadsheet,
   Warehouse,
   ArrowLeft,
-  MapPin,
   Clock,
   CheckCircle2
 } from 'lucide-react';
@@ -93,7 +92,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
   const executeSearch = useCallback(async (query: string, whCode: string = selectedWh) => {
     try {
       setIsLoading(true);
-      const serverResults = await searchErpMaterials(query, whCode, 80);
+      const serverResults = await searchErpMaterials(query, whCode, 120);
       setMaterials(serverResults);
 
       if (whCode === 'ALL' && !query) {
@@ -102,7 +101,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
     } catch (err: any) {
       console.warn('ERP search failed, fallback to IndexedDB:', err);
       try {
-        const local = await searchMaterialsInIndexedDb(query, 80);
+        const local = await searchMaterialsInIndexedDb(query, 120);
         setMaterials(local);
       } catch (localErr) {
         setMaterials([]);
@@ -129,7 +128,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
       setIsSyncing(true);
       const res = await syncErpMaterials(undefined, selectedWh, 3000);
       if (res.data && res.data.length > 0) {
-        setMaterials(res.data.slice(0, 80));
+        setMaterials(res.data.slice(0, 120));
         await saveMaterialsToIndexedDb(res.data);
       }
       onShowToast(`사내 ERP 자재 ${res.data.length}건이 최신화되었습니다.`, 'success');
@@ -168,57 +167,63 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
   /* ------------------------------------------------------------- */
   if (selectedCode) {
     return (
-      <div className="max-w-full sm:max-w-5xl lg:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 w-full">
+      <div className="max-w-full sm:max-w-5xl lg:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-4 w-full overflow-x-hidden">
         
-        {/* Full Screen Top Header Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center space-x-3">
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedCode(null);
-                setDetailData(null);
-              }}
-              className="p-2 sm:p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 text-xs sm:text-sm font-bold cursor-pointer shrink-0"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>목록으로</span>
-            </button>
+        {/* Sticky Top Header Bar (QR 라벨 인쇄 상단 고정) */}
+        <div className="sticky top-14 sm:top-16 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs">
+          <div className="flex items-center justify-between gap-3 max-w-full sm:max-w-5xl lg:max-w-7xl mx-auto">
+            
+            {/* Back Button & Title */}
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCode(null);
+                  setDetailData(null);
+                }}
+                className="h-10 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 text-xs sm:text-sm font-bold cursor-pointer shrink-0"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>목록</span>
+              </button>
 
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono font-black text-xs border border-indigo-200">
-                  {selectedCode}
-                </span>
-                <h1 className="text-base sm:text-xl font-black text-slate-900 tracking-tight">
-                  {detailData?.item.name || '자재 상세 정보'}
-                </h1>
-              </div>
-              <p className="text-xs text-slate-500 font-mono mt-0.5">
-                규격: {detailData?.item.spec || '-'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-            {detailData && (
-              <>
-                <div className="text-right mr-2 hidden sm:block">
-                  <span className="text-[10px] text-slate-400 block font-semibold">총 현재고</span>
-                  <span className="font-mono font-black text-emerald-600 text-base">
-                    {(detailData.item.currentStock || 0).toLocaleString()} {detailData.item.unit || 'EA'}
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono font-black text-xs border border-indigo-200 shrink-0">
+                    {selectedCode}
                   </span>
+                  <h1 className="text-sm sm:text-base font-black text-slate-900 tracking-tight truncate">
+                    {detailData?.item.name || '자재 상세'}
+                  </h1>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setQrPrintItem(detailData.item)}
-                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>QR 라벨 인쇄</span>
-                </button>
-              </>
-            )}
+                <p className="text-[11px] text-slate-400 font-mono truncate">
+                  {detailData?.item.spec || '-'}
+                </p>
+              </div>
+            </div>
+
+            {/* Total Stock & Print Action Button */}
+            <div className="flex items-center gap-2 shrink-0">
+              {detailData && (
+                <>
+                  <div className="text-right mr-1 hidden sm:block">
+                    <span className="text-[10px] text-slate-400 block font-semibold leading-none">총 현재고</span>
+                    <span className="font-mono font-black text-emerald-600 text-base leading-snug">
+                      {(detailData.item.currentStock || 0).toLocaleString()} {detailData.item.unit || 'EA'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setQrPrintItem(detailData.item)}
+                    className="h-10 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer shrink-0"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>QR 라벨 인쇄</span>
+                  </button>
+                </>
+              )}
+            </div>
+
           </div>
         </div>
 
@@ -229,64 +234,49 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
           </div>
         ) : (
           <>
-            {/* 1. Item Master Information Summary */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
-              <h2 className="text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+            {/* 1. Item Master Information Summary (랙 위치 제거 완료) */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs space-y-3">
+              <h2 className="text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-2.5">
                 <Database className="w-4 h-4 text-indigo-600" />
                 자재 마스터 기본 정보
               </h2>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 text-xs">
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-medium block">품목명</span>
-                  <span className="text-sm font-bold text-slate-900 block mt-1">{detailData.item.name}</span>
+                  <span className="text-xs sm:text-sm font-bold text-slate-900 block mt-0.5 truncate">{detailData.item.name}</span>
                 </div>
 
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-medium block">규격 / 사양</span>
-                  <span className="text-sm font-mono font-semibold text-slate-800 block mt-1">{detailData.item.spec || '-'}</span>
+                  <span className="text-xs sm:text-sm font-mono font-semibold text-slate-800 block mt-0.5 truncate">{detailData.item.spec || '-'}</span>
                 </div>
 
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  <span className="text-slate-400 font-medium block">창고 구역 / 랙 위치</span>
-                  <span className="text-sm font-mono font-black text-indigo-600 block mt-1 flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-indigo-500" />
-                    {detailData.item.zone ? `구역 [ ${detailData.item.zone} ]` : '미지정'}
-                  </span>
-                </div>
-
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-medium block">단위 / 안전재고</span>
-                  <span className="text-sm font-mono font-bold text-slate-800 block mt-1">
-                    {detailData.item.unit || 'EA'} (안전재고: {(detailData.item.safetyStock || 0).toLocaleString()})
+                  <span className="text-xs sm:text-sm font-mono font-bold text-slate-800 block mt-0.5">
+                    {detailData.item.unit || 'EA'} (안전: {(detailData.item.safetyStock || 0).toLocaleString()})
                   </span>
                 </div>
 
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-medium block">입고 단가 / 출고 단가</span>
-                  <span className="text-sm font-mono font-black text-slate-900 block mt-1">
+                  <span className="text-xs sm:text-sm font-mono font-black text-slate-900 block mt-0.5">
                     {detailData.item.unitPrice ? `${detailData.item.unitPrice.toLocaleString()}원` : '-'}
                     {detailData.item.outPrice ? ` / ${detailData.item.outPrice.toLocaleString()}원` : ''}
                   </span>
                 </div>
 
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-medium block">주 매입 거래처</span>
-                  <span className="text-sm font-bold text-slate-900 block mt-1 truncate">
+                  <span className="text-xs sm:text-sm font-bold text-slate-900 block mt-0.5 truncate">
                     {detailData.item.supplierName || detailData.item.supplierCode || '-'}
                   </span>
                 </div>
 
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  <span className="text-slate-400 font-medium block">거래처 연락처</span>
-                  <span className="text-sm font-mono font-semibold text-slate-700 block mt-1">
-                    {detailData.item.supplierPhone || '-'}
-                  </span>
-                </div>
-
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-medium block">비고 / 특이사항</span>
-                  <span className="text-xs text-slate-600 block mt-1 truncate">
+                  <span className="text-xs text-slate-600 block mt-0.5 truncate">
                     {detailData.item.notes || '-'}
                   </span>
                 </div>
@@ -294,32 +284,32 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
             </div>
 
             {/* 2. Warehouse Stock Breakdown */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3.5">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
                   <Warehouse className="w-4 h-4 text-indigo-600" />
-                  창고별 현재고 보유 현황
+                  창고별 현재고 현황
                 </h2>
-                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-lg">
                   총 현재고: {(detailData.item.currentStock || 0).toLocaleString()} {detailData.item.unit || 'EA'}
                 </span>
               </div>
 
               {detailData.warehouseStocks && detailData.warehouseStocks.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
                   {detailData.warehouseStocks.map((ws) => (
                     <div
                       key={ws.whCode}
-                      className="p-3.5 rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50/50 space-y-1 shadow-2xs"
+                      className="p-3 rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50/50 space-y-1 shadow-2xs"
                     >
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-slate-800">{ws.whName}</span>
-                        <span className="font-mono text-[10px] text-slate-400 font-bold bg-slate-100 px-1.5 py-0.5 rounded">
+                        <span className="font-bold text-slate-800 truncate max-w-[100px]">{ws.whName}</span>
+                        <span className="font-mono text-[10px] text-slate-400 font-bold bg-slate-100 px-1 py-0.2 rounded">
                           {ws.whCode}
                         </span>
                       </div>
-                      <div className="text-right pt-1">
-                        <span className="font-mono font-black text-lg text-indigo-600">
+                      <div className="text-right pt-0.5">
+                        <span className="font-mono font-black text-base text-indigo-600">
                           {Number(ws.stockQty).toLocaleString()}
                         </span>
                         <span className="text-xs text-slate-500 font-bold ml-1">{detailData.item.unit || 'EA'}</span>
@@ -328,26 +318,26 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                   ))}
                 </div>
               ) : (
-                <div className="p-6 bg-slate-50 rounded-xl text-center text-xs text-slate-500">
+                <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-500">
                   사내 창고에 기록된 현재고 수량이 없습니다.
                 </div>
               )}
             </div>
 
-            {/* 3. Comprehensive Subul History Full Screen Table */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            {/* 3. Comprehensive Subul History (전표번호 제거, 가로 스크롤 없이 한눈에 보기) */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-100 pb-2.5">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-indigo-600" />
                   <h2 className="text-sm font-black text-slate-900">
-                    전체 입출고 상세 수불 내역
+                    입출고 상세 수불 내역
                   </h2>
                   <span className="text-xs font-mono text-slate-500 font-bold">
                     ({filteredHistory.length}건)
                   </span>
                 </div>
 
-                {/* In/Out Filter Tabs */}
+                {/* Filter Tabs */}
                 <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold self-start sm:self-auto">
                   <button
                     type="button"
@@ -356,7 +346,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                       subulFilter === 'ALL' ? 'bg-white text-indigo-600 font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    전체 수불
+                    전체
                   </button>
                   <button
                     type="button"
@@ -380,24 +370,21 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
               </div>
 
               {filteredHistory.length === 0 ? (
-                <div className="p-12 text-center text-xs text-slate-500 bg-slate-50 rounded-xl">
+                <div className="p-10 text-center text-xs text-slate-500 bg-slate-50 rounded-xl">
                   해당 조건의 입출고 수불 내역이 없습니다.
                 </div>
               ) : (
-                <div className="border border-slate-200 rounded-xl overflow-hidden overflow-x-auto shadow-2xs">
-                  <table className="w-full text-left text-xs border-collapse">
+                <div className="rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+                  
+                  {/* Desktop / Tablet Table View (가로 스크롤 없음, 100% 한눈에) */}
+                  <table className="hidden md:table w-full text-left text-xs border-collapse table-fixed">
                     <thead>
-                      <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 whitespace-nowrap">
-                        <th className="p-3">일자</th>
-                        <th className="p-3">전표번호</th>
-                        <th className="p-3 text-center">구분</th>
-                        <th className="p-3 text-center">세부구분</th>
-                        <th className="p-3 text-right">수량</th>
-                        <th className="p-3 text-right">단가</th>
-                        <th className="p-3 text-right">금액</th>
-                        <th className="p-3">거래처명</th>
-                        <th className="p-3">비고</th>
-                        <th className="p-3">담당자</th>
+                      <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                        <th className="p-3 w-[15%]">일자</th>
+                        <th className="p-3 w-[12%] text-center">구분</th>
+                        <th className="p-3 w-[18%] text-right">수량</th>
+                        <th className="p-3 w-[25%] text-right">단가 / 금액</th>
+                        <th className="p-3 w-[30%]">거래처 / 비고</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
@@ -407,38 +394,106 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                         const qty = isIn ? hist.inQty || hist.totalQty : isOut ? hist.outQty || hist.totalQty : hist.totalQty;
 
                         return (
-                          <tr key={idx} className="hover:bg-indigo-50/30 transition-colors whitespace-nowrap">
-                            <td className="p-3 font-mono text-slate-600">{hist.date ? hist.date.substring(0, 10) : '-'}</td>
-                            <td className="p-3 font-mono font-bold text-slate-900">{hist.slipNo || '-'}</td>
+                          <tr key={idx} className="hover:bg-indigo-50/30 transition-colors">
+                            <td className="p-3 font-mono text-slate-600 font-medium">
+                              {hist.date ? hist.date.substring(0, 10) : '-'}
+                            </td>
                             <td className="p-3 text-center">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                 isIn ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                               }`}>
                                 {hist.type || (isIn ? '입고' : '출고')}
                               </span>
+                              {hist.subType && (
+                                <span className="block text-[10px] text-slate-400 mt-0.5 font-normal">
+                                  {hist.subType}
+                                </span>
+                              )}
                             </td>
-                            <td className="p-3 text-center text-slate-600">{hist.subType || '-'}</td>
-                            <td className={`p-3 font-mono text-right font-bold ${
+                            <td className={`p-3 font-mono text-right font-black text-sm ${
                               isIn ? 'text-emerald-600' : 'text-rose-600'
                             }`}>
                               {isIn ? `+${qty?.toLocaleString()}` : `-${qty?.toLocaleString()}`}
+                              <span className="text-[10px] text-slate-400 font-normal ml-0.5">{detailData.item.unit || 'EA'}</span>
                             </td>
-                            <td className="p-3 font-mono text-right text-slate-700">
-                              {hist.unitPrice ? `${hist.unitPrice.toLocaleString()}원` : '-'}
+                            <td className="p-3 font-mono text-right">
+                              <span className="text-slate-700 font-bold block">
+                                {hist.unitPrice ? `${hist.unitPrice.toLocaleString()}원` : '-'}
+                              </span>
+                              {hist.totalAmount ? (
+                                <span className="text-[11px] text-slate-400 block font-normal">
+                                  합계: {hist.totalAmount.toLocaleString()}원
+                                </span>
+                              ) : null}
                             </td>
-                            <td className="p-3 font-mono text-right text-slate-900 font-bold">
-                              {hist.totalAmount ? `${hist.totalAmount.toLocaleString()}원` : '-'}
+                            <td className="p-3">
+                              <span className="font-bold text-slate-800 block truncate" title={hist.supplierName || hist.supplierCode || '-'}>
+                                {hist.supplierName || hist.supplierCode || '-'}
+                              </span>
+                              {(hist.memo || hist.managerCode) && (
+                                <span className="text-[11px] text-slate-400 block truncate mt-0.5">
+                                  {hist.memo ? hist.memo : ''} {hist.managerCode ? `[${hist.managerCode}]` : ''}
+                                </span>
+                              )}
                             </td>
-                            <td className="p-3 text-slate-800 max-w-[140px] truncate">
-                              {hist.supplierName || hist.supplierCode || '-'}
-                            </td>
-                            <td className="p-3 text-slate-500 max-w-[160px] truncate">{hist.memo || '-'}</td>
-                            <td className="p-3 text-slate-600 text-[11px]">{hist.managerCode || '-'}</td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
+
+                  {/* Mobile Stream View (가로 스크롤 완전 제거, 2열 카드 스트림) */}
+                  <div className="md:hidden divide-y divide-slate-100 bg-white">
+                    {filteredHistory.map((hist, idx) => {
+                      const isIn = hist.inQty > 0 || hist.type === '입고' || hist.type === '매입';
+                      const isOut = hist.outQty > 0 || hist.type === '출고' || hist.type === '매출';
+                      const qty = isIn ? hist.inQty || hist.totalQty : isOut ? hist.outQty || hist.totalQty : hist.totalQty;
+
+                      return (
+                        <div key={idx} className="p-3 hover:bg-slate-50 transition-colors space-y-1">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-1.5">
+                              <span className="font-mono text-xs font-semibold text-slate-500">
+                                {hist.date ? hist.date.substring(0, 10) : '-'}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                isIn ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                              }`}>
+                                {hist.type || (isIn ? '입고' : '출고')} {hist.subType ? `· ${hist.subType}` : ''}
+                              </span>
+                            </div>
+                            <div className="font-mono font-black text-sm">
+                              <span className={isIn ? 'text-emerald-600' : 'text-rose-600'}>
+                                {isIn ? `+${qty?.toLocaleString()}` : `-${qty?.toLocaleString()}`}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-normal ml-0.5">{detailData.item.unit || 'EA'}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs pt-0.5">
+                            <span className="font-bold text-slate-800 truncate max-w-[55%]">
+                              {hist.supplierName || hist.supplierCode || '-'}
+                            </span>
+                            <div className="text-right font-mono text-xs">
+                              <span className="font-bold text-slate-700">
+                                {hist.unitPrice ? `${hist.unitPrice.toLocaleString()}원` : '-'}
+                              </span>
+                              {hist.totalAmount ? (
+                                <span className="text-[11px] text-slate-400 ml-1">({hist.totalAmount.toLocaleString()}원)</span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          {hist.memo && (
+                            <p className="text-[11px] text-slate-400 truncate">
+                              비고: {hist.memo} {hist.managerCode ? `(담당: ${hist.managerCode})` : ''}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
                 </div>
               )}
             </div>
@@ -480,11 +535,6 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                   <span className="text-xs text-slate-500 font-mono block line-clamp-1">
                     {qrPrintItem.spec || 'KCP 자재표준규격'}
                   </span>
-                  {qrPrintItem.zone && (
-                    <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono text-xs font-bold border border-indigo-100 mt-1">
-                      랙 위치: {qrPrintItem.zone}
-                    </span>
-                  )}
                 </div>
               </div>
 
@@ -542,7 +592,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
   return (
     <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-3.5 w-full">
       
-      {/* 1. Top Header: Clean Title & Refresh Button (설명문 제거 완료) */}
+      {/* 1. Top Header: Clean Title & Refresh Button */}
       <div className="bg-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md border border-slate-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
@@ -567,11 +617,11 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
         </div>
       </div>
 
-      {/* 2. Unified Sticky Search & Warehouse Listbox Bar (상단바 고정 & 빠른검색 제거) */}
+      {/* 2. Unified Sticky Search & Warehouse Listbox Bar */}
       <div className="sticky top-14 sm:top-16 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs">
         <div className="flex flex-col sm:flex-row items-center gap-2 max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto">
           
-          {/* Warehouse Dropdown Listbox (창고 선택 리스트박스) */}
+          {/* Warehouse Dropdown Listbox */}
           <div className="w-full sm:w-56 shrink-0 relative">
             <select
               value={selectedWh}
@@ -595,7 +645,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="품목코드, 품목명, 규격, 랙위치, 거래처명을 검색하세요..."
+              placeholder="품목코드, 품목명, 규격, 거래처명을 검색하세요..."
               className="w-full h-11 sm:h-12 pl-10 pr-9 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
             />
             {searchTerm && (
@@ -612,7 +662,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
         </div>
       </div>
 
-      {/* 3. Results Section (보유 창고 정보, 현재고, 랙위치 강조) */}
+      {/* 3. Results Section (창고별로 따로 표시, 랙 위치 제외 완료) */}
       <div className="space-y-3 pt-1">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
@@ -638,9 +688,9 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-            {materials.map((item) => (
+            {materials.map((item, idx) => (
               <div
-                key={item.code}
+                key={`${item.code}_${item.whCode || idx}_${idx}`}
                 className="bg-white rounded-2xl border border-slate-200 p-4 hover:border-indigo-300 hover:shadow-md transition-all space-y-3 flex flex-col justify-between"
               >
                 <div className="space-y-2.5">
@@ -664,33 +714,20 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                     </p>
                   </div>
 
-                  {/* Warehouse Location & Current Stock */}
+                  {/* Warehouse & Stock Details (같은 물품이라도 창고별 개별 표시, 랙 위치 제외) */}
                   <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
                     
-                    {/* 보유 창고 정보 (부품별 보유 창고 명시) */}
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-slate-500 flex items-center gap-1 shrink-0 mt-0.5">
-                        <Warehouse className="w-3.5 h-3.5 text-indigo-600" /> 보유 창고
+                    {/* 보관 창고 (개별 창고 명시) */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 flex items-center gap-1 shrink-0">
+                        <Warehouse className="w-3.5 h-3.5 text-indigo-600" /> 보관 창고
                       </span>
-                      <span
-                        className="font-bold text-slate-800 text-right line-clamp-1 break-all"
-                        title={item.whName || '재고창고 없음'}
-                      >
+                      <span className="font-bold text-slate-900 bg-indigo-50/80 border border-indigo-100 px-2 py-0.5 rounded-md truncate max-w-[190px]">
                         {item.whName || (selectedWh !== 'ALL' ? warehouses.find(w => w.code === selectedWh)?.name : '재고창고 없음')}
                       </span>
                     </div>
 
-                    {/* 랙 위치 (구역 코드) */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500 flex items-center gap-1 shrink-0">
-                        <MapPin className="w-3.5 h-3.5 text-amber-600" /> 랙 위치
-                      </span>
-                      <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                        {item.zone ? `구역 [ ${item.zone} ]` : '미지정'}
-                      </span>
-                    </div>
-
-                    {/* 현재고 수량 (에메랄드 강조 뱃지) */}
+                    {/* 해당 창고 현재고 수량 */}
                     <div className="flex items-center justify-between pt-0.5">
                       <span className="text-slate-500 flex items-center gap-1 shrink-0">
                         <Boxes className="w-3.5 h-3.5 text-emerald-500" /> 현재고 수량
@@ -710,7 +747,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                   </div>
                 </div>
 
-                {/* Card Action Buttons (재고등록 버튼 제거 완료) */}
+                {/* Card Action Buttons */}
                 <div className="grid grid-cols-2 gap-2 pt-2.5 border-t border-slate-100">
                   <button
                     type="button"
@@ -771,11 +808,6 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                 <span className="text-xs text-slate-500 font-mono block line-clamp-1">
                   {qrPrintItem.spec || 'KCP 자재표준규격'}
                 </span>
-                {qrPrintItem.zone && (
-                  <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono text-xs font-bold border border-indigo-100 mt-1">
-                    랙 위치: {qrPrintItem.zone}
-                  </span>
-                )}
               </div>
             </div>
 

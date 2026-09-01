@@ -97,16 +97,18 @@ async function getOrUpdateMaterialsCache(forceRefresh = false, whCode = 'ALL'): 
       WITH StockCTE AS (
         SELECT 
           m.itm_cd,
-          ${isSpecificWh ? 'MAX(w.wh_cd) AS whCode, MAX(w.wh_nm) AS whName,' : "STRING_AGG(RTRIM(w.wh_cd), ', ') AS whCode, STRING_AGG(RTRIM(w.wh_nm), ', ') AS whName,"}
+          RTRIM(a.wh_cd) AS whCode,
+          RTRIM(w.wh_nm) AS whName,
           SUM(ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) AS currentStock
         FROM LES200 a
         INNER JOIN DMA100 m ON m.itm_id = a.itm_id
         INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd
         WHERE a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
-          ${isSpecificWh ? `AND a.wh_cd = @whCode` : 'AND (ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) > 0'}
-        GROUP BY m.itm_cd
+          ${isSpecificWh ? `AND a.wh_cd = @whCode` : ''}
+          AND (ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) > 0
+        GROUP BY m.itm_cd, a.wh_cd, w.wh_nm
       )
-      SELECT TOP (5000)
+      SELECT TOP (10000)
         RTRIM(P.품목코드) AS code,
         RTRIM(P.품목명) AS name,
         RTRIM(P.규격) AS spec,
@@ -230,14 +232,16 @@ router.get('/materials', async (req: Request, res: Response) => {
       WITH StockCTE AS (
         SELECT 
           m.itm_cd,
-          ${isSpecificWh ? 'MAX(w.wh_cd) AS whCode, MAX(w.wh_nm) AS whName,' : "STRING_AGG(RTRIM(w.wh_cd), ', ') AS whCode, STRING_AGG(RTRIM(w.wh_nm), ', ') AS whName,"}
+          RTRIM(a.wh_cd) AS whCode,
+          RTRIM(w.wh_nm) AS whName,
           SUM(ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) AS currentStock
         FROM LES200 a
         INNER JOIN DMA100 m ON m.itm_id = a.itm_id
         INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd
         WHERE a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
-          ${isSpecificWh ? `AND a.wh_cd = @whCode` : 'AND (ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) > 0'}
-        GROUP BY m.itm_cd
+          ${isSpecificWh ? `AND a.wh_cd = @whCode` : ''}
+          AND (ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) > 0
+        GROUP BY m.itm_cd, a.wh_cd, w.wh_nm
       )
       SELECT TOP (${limit})
         RTRIM(P.품목코드) AS code,
