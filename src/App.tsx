@@ -155,23 +155,21 @@ export default function App() {
     });
   }, [tabHistory]);
 
-  // Global Back Trigger Handler (Priority 0: Double-tap to exit at root)
-  const handleGlobalBack = useCallback(() => {
-    // 1. Traverse priority stack (modals, subviews, tab history)
-    const isHandled = triggerBack();
-    if (isHandled) return;
+  // Global Back Trigger Handler
+  // Returns true if handled by modal/subview/tabHistory, false if at root level
+  const handleGlobalBack = useCallback((): boolean => {
+    return triggerBack();
+  }, []);
 
-    // 2. At root home screen: double-tap within 2s to exit app
-    const now = Date.now();
-    if (now - lastBackPressRef.current < 2000) {
-      if (Capacitor.isNativePlatform()) {
-        CapApp.exitApp();
-      }
-    } else {
-      lastBackPressRef.current = now;
-      showToast('뒤로가기 버튼을 한 번 더 누르면 종료됩니다.', 'info');
-    }
-  }, [showToast]);
+  // Expose to window for Android native MainActivity.java callback
+  useEffect(() => {
+    (window as any).handleNativeBackButton = () => {
+      return handleGlobalBack();
+    };
+    return () => {
+      delete (window as any).handleNativeBackButton;
+    };
+  }, [handleGlobalBack]);
 
   // Wire into Android Capacitor native back button AND Web popstate
   useEffect(() => {
@@ -179,15 +177,50 @@ export default function App() {
 
     if (Capacitor.isNativePlatform()) {
       CapApp.addListener('backButton', () => {
-        handleGlobalBack();
+        const handled = handleGlobalBack();
+        if (!handled) {
+          // At root screen: require two presses within 2000ms to exit app
+          const now = Date.now();
+          if (now - lastBackPressRef.current < 2000) {
+            CapApp.exitApp();
+          } else {
+            lastBackPressRef.current = now;
+            showToast('뒤로가기 버튼을 한 번 더 누르면 종료됩니다.', 'info');
+          }
+        }
       }).then((l) => {
         capListener = l;
       });
     }
 
+    // Web browser popstate handling with guard state to prevent browser exit
+    try {
+      window.history.pushState({ appRoot: true }, '', '');
+    } catch { /* ignore */ }
+
     const onPopState = (e: PopStateEvent) => {
       e.preventDefault();
-      handleGlobalBack();
+      const handled = handleGlobalBack();
+      if (handled) {
+        try {
+          window.history.pushState({ appRoot: true }, '', '');
+        } catch { /* ignore */ }
+      } else {
+        const now = Date.now();
+        if (now - lastBackPressRef.current < 2000) {
+          if (Capacitor.isNativePlatform()) {
+            CapApp.exitApp();
+          } else {
+            window.history.back();
+          }
+        } else {
+          lastBackPressRef.current = now;
+          showToast('뒤로가기 버튼을 한 번 더 누르면 종료됩니다.', 'info');
+          try {
+            window.history.pushState({ appRoot: true }, '', '');
+          } catch { /* ignore */ }
+        }
+      }
     };
 
     window.addEventListener('popstate', onPopState);
@@ -196,7 +229,7 @@ export default function App() {
       if (capListener) capListener.remove();
       window.removeEventListener('popstate', onPopState);
     };
-  }, [handleGlobalBack]);
+  }, [handleGlobalBack, showToast]);
 
   // Load Slips, Stats and Warehouses from Backend (통합 ERP 실시간 미입고 & 입고내역 연동)
   const loadInitialData = useCallback(async () => {
