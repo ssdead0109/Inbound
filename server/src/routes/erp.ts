@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
 import { mssqlAdapter } from '../db/mssqlAdapter';
 import { getItemByCode, createItem } from '../db';
 import { InventoryItem } from '../types';
@@ -397,34 +398,42 @@ router.post('/auth/login', async (req: Request, res: Response) => {
     const cleanCode = code.trim();
     const cleanPwd = typeof password === 'string' ? password.trim() : '';
 
-    // 1. Try scu100 table first
+    // 1. Try scu100 table first (Younglimwon K-System standard user master)
     let userRow: any = null;
+    let isFromScu100 = false;
+
     try {
       const scuSql = `
         SELECT TOP 1
           RTRIM(ISNULL(id, '')) AS code,
+          RTRIM(ISNULL(nm, '')) AS name,
           RTRIM(ISNULL(pwd, '')) AS pwd,
-          RTRIM(ISNULL(name, id)) AS name,
-          RTRIM(ISNULL(dept_nm, '자재')) AS dept,
-          ISNULL(admin_yn, 0) AS isAdmin
+          RTRIM(ISNULL(pda_pwd, '')) AS pda_pwd,
+          RTRIM(ISNULL(dept_cd, '')) AS dept_cd,
+          RTRIM(ISNULL(emp_no, '')) AS emp_no,
+          RTRIM(ISNULL(usr_ty, '')) AS usr_ty,
+          ISNULL(use_yn, '1') AS use_yn
         FROM scu100
-        WHERE id = @cleanCode
+        WHERE LOWER(id) = LOWER(@cleanCode)
       `;
       const scuRows = await mssqlAdapter.query<any>(scuSql, { cleanCode });
       if (scuRows && scuRows.length > 0) {
         const r = scuRows[0];
+        const isAdmin = r.usr_ty === 'SC700990' || (r.code && r.code.toLowerCase() === 'admin');
         userRow = {
           code: r.code,
           name: r.name || r.code,
           pwd: r.pwd || '',
-          isAdmin: r.isAdmin === 'Y' || r.isAdmin === 1,
+          pda_pwd: r.pda_pwd || '',
+          isAdmin,
           hidePrice: false,
-          dept: r.dept || '자재',
-          role: (r.isAdmin === 'Y' || r.isAdmin === 1) ? '관리자' : '사원',
+          dept: r.dept_cd || '자재',
+          role: isAdmin ? '관리자' : '사원',
         };
+        isFromScu100 = true;
       }
-    } catch {
-      // scu100 query not available, fallback
+    } catch (scuErr) {
+      console.warn('[scu100 query failed, fallback to MT_TC]', scuErr);
     }
 
     // 2. Fallback to MT_TC_담당자코드 if not found in scu100
@@ -450,11 +459,13 @@ router.post('/auth/login', async (req: Request, res: Response) => {
           code: user.code,
           name: user.name,
           pwd: user.pwd || '',
+          pda_pwd: '',
           dept: user.dept || '자재부서',
           role: user.role || (user.isAdmin ? '관리자' : '사원'),
           isAdmin: Boolean(user.isAdmin),
           hidePrice: Boolean(user.hidePrice),
         };
+        isFromScu100 = false;
       }
     }
 
@@ -462,10 +473,35 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: `등록되지 않은 ID/사번(${cleanCode})입니다.` });
     }
 
-    const dbPwd = (userRow.pwd || '').trim();
+    // Verify Password
+    let isPasswordValid = false;
+    const dbHash = (userRow.pwd || '').trim().toLowerCase();
+    const pdaPwd = (userRow.pda_pwd || '').trim();
+    const sha256Input = crypto.createHash('sha256').update(cleanPwd).digest('hex').toLowerCase();
 
-    // If password is set in DB, verify it
-    if (dbPwd !== '' && cleanPwd !== dbPwd) {
+    if (isFromScu100) {
+      // 1) SHA-256 hash match (K-System default: e.g. '1234')
+      // 2) PDA plain-text password match (e.g. 'kcp123!@')
+      // 3) Raw password match
+      // 4) Empty password in DB
+      if (!dbHash && !pdaPwd) {
+        isPasswordValid = true;
+      } else if (dbHash && sha256Input === dbHash) {
+        isPasswordValid = true;
+      } else if (pdaPwd && cleanPwd === pdaPwd) {
+        isPasswordValid = true;
+      } else if (dbHash && cleanPwd.toLowerCase() === dbHash) {
+        isPasswordValid = true;
+      }
+    } else {
+      // MT_TC_담당자코드 plain text comparison
+      const rawDbPwd = (userRow.pwd || '').trim();
+      if (rawDbPwd === '' || cleanPwd === rawDbPwd) {
+        isPasswordValid = true;
+      }
+    }
+
+    if (!isPasswordValid) {
       return res.status(401).json({ success: false, message: '비밀번호가 일치하지 않습니다.' });
     }
 
