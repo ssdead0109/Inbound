@@ -5,9 +5,11 @@ import {
   History,
   User,
   RotateCcw,
-  Database
+  Database,
+  LogOut
 } from 'lucide-react';
 import { InboundViewTab } from '../../types/inbound';
+import { ErpUser } from '../../api/erpApi';
 
 interface InboundNavbarProps {
   currentTab: InboundViewTab;
@@ -16,6 +18,8 @@ interface InboundNavbarProps {
   operator: string;
   onChangeOperator: (operator: string) => void;
   onResetSamples: () => void;
+  currentUser?: ErpUser | null;
+  onLogout?: () => void;
 }
 
 const DEFAULT_OPERATORS = [
@@ -32,6 +36,8 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
   operator,
   onChangeOperator,
   onResetSamples,
+  currentUser,
+  onLogout,
 }) => {
   const [isEditingOperator, setIsEditingOperator] = useState(false);
   const [customOpInput, setCustomOpInput] = useState(operator);
@@ -120,9 +126,35 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
             </button>
           </nav>
 
-          {/* Right Operator Simple Selector & Reset */}
+          {/* Right User Status & Logout */}
           <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
-            {isEditingOperator ? (
+            {currentUser ? (
+              <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1.5 bg-slate-100 border border-slate-200 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></div>
+                  <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                  <div className="flex items-center gap-1">
+                    <span className="font-bold text-slate-900">{currentUser.name}</span>
+                    {currentUser.isAdmin ? (
+                      <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">관리자</span>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 font-medium">({currentUser.dept || '자재'})</span>
+                    )}
+                  </div>
+                </div>
+
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={onLogout}
+                    title="로그아웃"
+                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer border border-transparent hover:border-rose-200"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ) : isEditingOperator ? (
               <form onSubmit={handleSaveCustomOp} className="flex items-center space-x-1">
                 <input
                   type="text"
@@ -140,31 +172,7 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
               <div className="flex items-center space-x-1.5 bg-slate-100 border border-slate-200 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></div>
                 <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <select
-                  value={DEFAULT_OPERATORS.includes(operator) ? operator : 'custom'}
-                  onChange={(e) => {
-                    if (e.target.value === 'custom') {
-                      setIsEditingOperator(true);
-                    } else {
-                      onChangeOperator(e.target.value);
-                    }
-                  }}
-                  className="bg-transparent text-slate-800 text-xs font-semibold focus:outline-none cursor-pointer pr-1 max-w-[110px] sm:max-w-none truncate"
-                >
-                  {DEFAULT_OPERATORS.map((op) => (
-                    <option key={op} value={op} className="bg-white text-slate-900">
-                      {op}
-                    </option>
-                  ))}
-                  {!DEFAULT_OPERATORS.includes(operator) && (
-                    <option value="custom" className="bg-white text-slate-900">
-                      {operator}
-                    </option>
-                  )}
-                  <option value="custom" className="bg-white text-indigo-600 font-bold">
-                    ✏️ 직접 입력...
-                  </option>
-                </select>
+                <span className="font-semibold text-slate-800">{operator}</span>
               </div>
             )}
 

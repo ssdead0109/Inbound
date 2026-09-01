@@ -23,6 +23,8 @@ import { InboundHistoryView } from './components/inbound/InboundHistoryView';
 import { InboundSimulatorModal } from './components/inbound/InboundSimulatorModal';
 import { InboundSlipPrintModal } from './components/inbound/InboundSlipPrintModal';
 import { ErpMaterialSearchView } from './components/erp/ErpMaterialSearchView';
+import { InboundLoginModal } from './components/auth/InboundLoginModal';
+import { ErpUser } from './api/erpApi';
 
 import {
   QrCode,
@@ -46,8 +48,24 @@ export default function App() {
   // Active Slip currently being inspected
   const [activeSlip, setActiveSlip] = useState<InboundSlip | null>(null);
 
-  // Operator
+  // Active User / Operator Session (ERP MT_TC_담당자코드)
+  const [currentUser, setCurrentUser] = useState<ErpUser | null>(() => {
+    const saved = localStorage.getItem('kcp_erp_user');
+    if (saved) {
+      try { return JSON.parse(saved); } catch { return null; }
+    }
+    return null;
+  });
+
+  // Operator display string
   const [operator, setOperator] = useState<string>(() => {
+    const savedUser = localStorage.getItem('kcp_erp_user');
+    if (savedUser) {
+      try {
+        const u: ErpUser = JSON.parse(savedUser);
+        return `${u.name} (${u.dept || (u.isAdmin ? '관리자' : '자재')})`;
+      } catch { /* fallback */ }
+    }
     return localStorage.getItem('kcp_operator') || '홍길동 (자재과장)';
   });
 
@@ -113,6 +131,23 @@ export default function App() {
     setOperator(newOp);
     localStorage.setItem('kcp_operator', newOp);
     showToast(`담당자가 '${newOp}'(으)로 변경되었습니다.`, 'info');
+  };
+
+  // Login Success
+  const handleLoginSuccess = (user: ErpUser) => {
+    setCurrentUser(user);
+    const opTitle = `${user.name} (${user.dept || (user.isAdmin ? '관리자' : '자재')})`;
+    setOperator(opTitle);
+    localStorage.setItem('kcp_operator', opTitle);
+    localStorage.setItem('kcp_erp_user', JSON.stringify(user));
+    showToast(`${user.name}님 로그인 완료! 현장 입고 검수를 시작합니다.`, 'success');
+  };
+
+  // Logout
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('kcp_erp_user');
+    showToast('로그아웃되었습니다.', 'info');
   };
 
   // Handle QR Scan Result
@@ -191,17 +226,23 @@ export default function App() {
                         (activeSlip && activeSlip.slipNo.length === 11) ||
                         (activeSlip && !activeSlip.slipNo.startsWith('DN-'));
 
+      const managerName = currentUser ? `${currentUser.name} [${currentUser.code}]` : operator;
+      const receivePayload: InboundReceivePayload = {
+        ...payload,
+        manager: payload.manager || managerName,
+      };
+
       let resultSlip: InboundSlip;
 
       if (isErpSlip) {
         // Real-time ERP MSSQL Inbound Receive
-        const erpRes = await erpApi.processErpInboundReceive(payload);
+        const erpRes = await erpApi.processErpInboundReceive(receivePayload);
         soundHelper.playSuccessChime();
         showToast(erpRes.message || '사내 ERP(MSSQL) 입고 처리가 완료되었습니다!', 'success');
         resultSlip = erpRes.slip;
       } else {
         // Standard Local Inbound Receive
-        const localRes = await inboundApi.processInboundReceive(payload);
+        const localRes = await inboundApi.processInboundReceive(receivePayload);
         soundHelper.playSuccessChime();
         showToast(localRes.message || '입고 처리가 완료되었습니다!', 'success');
         resultSlip = localRes.slip;
@@ -250,6 +291,32 @@ export default function App() {
 
   const pendingCount = slips.filter((s) => s.status === 'WAITING' || s.status === 'INSPECTING').length;
 
+  if (!currentUser) {
+    return (
+      <>
+        {toast && (
+          <div className="fixed top-6 right-3 sm:right-6 z-50 animate-in slide-in-from-top-2 duration-200">
+            <div className={`px-4 py-2.5 rounded-xl shadow-lg border flex items-center space-x-2 text-xs font-bold ${
+              toast.type === 'success'
+                ? 'bg-white text-emerald-700 border-emerald-300 shadow-emerald-100/50'
+                : toast.type === 'error'
+                ? 'bg-white text-rose-700 border-rose-300 shadow-rose-100/50'
+                : 'bg-white text-indigo-700 border-indigo-300 shadow-indigo-100/50'
+            }`}>
+              {toast.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              )}
+              <span>{toast.message}</span>
+            </div>
+          </div>
+        )}
+        <InboundLoginModal onLoginSuccess={handleLoginSuccess} />
+      </>
+    );
+  }
+
   return (
     <div
       style={{ backgroundColor: '#f8fafc', color: '#0f172a', colorScheme: 'light' }}
@@ -284,6 +351,8 @@ export default function App() {
         operator={operator}
         onChangeOperator={handleOperatorChange}
         onResetSamples={handleResetSamples}
+        currentUser={currentUser}
+        onLogout={handleLogout}
       />
 
       {/* Main Workspace Body */}

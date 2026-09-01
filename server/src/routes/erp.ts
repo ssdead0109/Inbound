@@ -250,4 +250,117 @@ router.post('/inbound/receive', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/erp/auth/login - 사내 ERP 담당자코드 & 패스워드 로그인 인증
+router.post('/auth/login', async (req: Request, res: Response) => {
+  try {
+    const { code, password } = req.body;
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ success: false, message: '담당자코드를 입력해주세요.' });
+    }
+
+    const isConnected = await mssqlAdapter.connect();
+    if (!isConnected) {
+      if (code === 'admin' || code === 'demo') {
+        return res.json({
+          success: true,
+          user: {
+            code: 'admin',
+            name: '개발자 (오프라인 모드)',
+            dept: '자재관리부',
+            role: '관리자',
+            isAdmin: true,
+            hidePrice: false,
+          },
+        });
+      }
+      return res.status(503).json({ success: false, message: '사내 ERP DB에 연결할 수 없습니다.' });
+    }
+
+    const cleanCode = code.trim();
+    const cleanPwd = typeof password === 'string' ? password.trim() : '';
+
+    const sql = `
+      SELECT 
+        RTRIM(ISNULL(담당자코드, '')) AS code,
+        RTRIM(ISNULL(담당자명, '')) AS name,
+        RTRIM(ISNULL(패스워드, '')) AS pwd,
+        ISNULL(관리자여부, 0) AS isAdmin,
+        ISNULL(단가숨김여부, 0) AS hidePrice,
+        ISNULL(사용여부, 1) AS isActive,
+        RTRIM(ISNULL(부서, '')) AS dept,
+        RTRIM(ISNULL(직책, '')) AS role
+      FROM MT_TC_담당자코드
+      WHERE 담당자코드 = @cleanCode OR 담당자명 = @cleanCode
+    `;
+
+    const rows = await mssqlAdapter.query<any>(sql, { cleanCode });
+    if (rows.length === 0) {
+      return res.status(401).json({ success: false, message: `등록되지 않은 담당자코드(${cleanCode})입니다.` });
+    }
+
+    const user = rows[0];
+    const dbPwd = (user.pwd || '').trim();
+
+    // If password is set in DB, verify it
+    if (dbPwd !== '' && cleanPwd !== dbPwd) {
+      return res.status(401).json({ success: false, message: '비밀번호가 일치하지 않습니다.' });
+    }
+
+    return res.json({
+      success: true,
+      user: {
+        code: user.code,
+        name: user.name,
+        dept: user.dept || '자재부서',
+        role: user.role || (user.isAdmin ? '관리자' : '사원'),
+        isAdmin: Boolean(user.isAdmin),
+        hidePrice: Boolean(user.hidePrice),
+      },
+    });
+  } catch (err: any) {
+    console.error('[ERP Login Error]', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/erp/auth/users - 활성 사원 목록 (빠른 선택용, 패스워드 제외)
+router.get('/auth/users', async (_req: Request, res: Response) => {
+  try {
+    const isConnected = await mssqlAdapter.connect();
+    if (!isConnected) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const sql = `
+      SELECT 
+        RTRIM(ISNULL(담당자코드, '')) AS code,
+        RTRIM(ISNULL(담당자명, '')) AS name,
+        ISNULL(관리자여부, 0) AS isAdmin,
+        ISNULL(단가숨김여부, 0) AS hidePrice,
+        RTRIM(ISNULL(부서, '')) AS dept,
+        RTRIM(ISNULL(직책, '')) AS role,
+        CASE WHEN RTRIM(ISNULL(패스워드, '')) = '' THEN 0 ELSE 1 END AS hasPassword
+      FROM MT_TC_담당자코드
+      WHERE 사용여부 = 1 OR 관리자여부 = 1
+      ORDER BY 담당자명 ASC
+    `;
+
+    const rows = await mssqlAdapter.query<any>(sql);
+    res.json({
+      success: true,
+      data: rows.map(r => ({
+        code: r.code,
+        name: r.name,
+        dept: r.dept || '자재',
+        role: r.role || (r.isAdmin ? '관리자' : '사원'),
+        isAdmin: Boolean(r.isAdmin),
+        hidePrice: Boolean(r.hidePrice),
+        hasPassword: Boolean(r.hasPassword),
+      })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 export default router;

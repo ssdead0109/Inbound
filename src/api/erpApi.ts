@@ -45,6 +45,16 @@ export interface ErpMaterialDetail {
   history: ErpHistoryItem[];
 }
 
+export interface ErpUser {
+  code: string;
+  name: string;
+  dept: string;
+  role: string;
+  isAdmin: boolean;
+  hidePrice: boolean;
+  hasPassword?: boolean;
+}
+
 const API_BASE = '/api/erp';
 
 export async function fetchErpStatus(): Promise<ErpStatus> {
@@ -140,3 +150,30 @@ export async function processErpInboundReceive(payload: InboundReceivePayload): 
   }
   return json;
 }
+
+/**
+ * 사내 ERP 담당자코드 & 패스워드 로그인 인증
+ */
+export async function loginErpUser(code: string, password?: string): Promise<ErpUser> {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, password }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.message || '로그인에 실패했습니다.');
+  }
+  return json.user;
+}
+
+/**
+ * 활성 사원 목록 조회 (빠른 선택용)
+ */
+export async function fetchErpUsers(): Promise<ErpUser[]> {
+  const res = await fetch(`${API_BASE}/auth/users`);
+  if (!res.ok) throw new Error('사원 목록 조회 실패');
+  const json = await res.json();
+  return json.data || [];
+}
+
