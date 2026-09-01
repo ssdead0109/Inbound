@@ -132,113 +132,110 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
   return (
     <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 w-full overflow-x-hidden">
       
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
-        <div className="flex items-center space-x-2.5">
-          <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center shrink-0 shadow-2xs">
-            <History className="w-4 h-4" />
+      {/* 1. Header Banner */}
+      <div className="bg-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md border border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shrink-0 shadow-xs">
+              <History className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
+                  입고 완료 내역
+                </h1>
+                <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
+                  {historySlips.length}건
+                </span>
+                {onRefresh && (
+                  <button
+                    type="button"
+                    onClick={onRefresh}
+                    title="사내 ERP 입고내역 새로고침"
+                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-indigo-300 hover:text-white transition-all cursor-pointer border border-white/10 shrink-0"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                총 실입고 수량: <strong className="text-white font-mono">{totalReceivedCount.toLocaleString()} EA</strong>
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              <span>입고 완료 내역</span>
-              <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono">
-                {historySlips.length}건
-              </span>
-              {onRefresh && (
-                <button
-                  type="button"
-                  onClick={onRefresh}
-                  title="사내 ERP 입고내역 새로고침"
-                  className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </h2>
-            <p className="text-xs text-slate-500 font-normal mt-0.5">
-              총 실입고 수량: <strong className="text-slate-900 font-mono">{totalReceivedCount.toLocaleString()} EA</strong>
-            </p>
-          </div>
-        </div>
 
-        {/* View Mode Toggle */}
-        <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={() => setViewMode('BY_SLIP')}
-            className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-              viewMode === 'BY_SLIP'
-                ? 'bg-white text-indigo-700 font-bold shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>전표별 보기</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('BY_ITEM')}
-            className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-              viewMode === 'BY_ITEM'
-                ? 'bg-white text-indigo-700 font-bold shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <List className="w-3.5 h-3.5" />
-            <span>세부 품목별 보기</span>
-          </button>
+          {/* View Mode Toggle */}
+          <div className="flex items-center space-x-1 bg-white/10 p-1 rounded-xl border border-white/10 text-xs self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setViewMode('BY_SLIP')}
+              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                viewMode === 'BY_SLIP'
+                  ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>전표별 보기</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('BY_ITEM')}
+              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                viewMode === 'BY_ITEM'
+                  ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>품목별 보기</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Search & Filter Controls */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="전표번호, 공급처, 품목코드 검색..."
-            className="w-full pl-9 pr-3 py-2 bg-white text-slate-900 placeholder-slate-400 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-indigo-500 font-medium"
-          />
-        </div>
+      {/* 2. Unified Sticky Search & Status Filter Bar */}
+      <div className="sticky top-14 sm:top-16 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs">
+        <div className="flex flex-col sm:flex-row items-center gap-2 max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto">
+          
+          {/* Status Dropdown Listbox */}
+          <div className="w-full sm:w-52 shrink-0 relative">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="w-full h-11 sm:h-12 pl-3.5 pr-8 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer"
+            >
+              <option value="ALL">📦 전체 상태 ({historySlips.length}건)</option>
+              <option value="COMPLETED">✅ 입고 완료 ({historySlips.filter(s => s.status === 'COMPLETED').length}건)</option>
+              <option value="PARTIAL">⚠️ 부분 입고 ({historySlips.filter(s => s.status === 'PARTIAL').length}건)</option>
+            </select>
+            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
 
-        <div className="flex items-center space-x-1.5 self-end sm:self-auto text-xs">
-          <button
-            type="button"
-            onClick={() => setStatusFilter('ALL')}
-            className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-              statusFilter === 'ALL'
-                ? 'bg-indigo-600 text-white font-bold'
-                : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
-            }`}
-          >
-            전체 ({historySlips.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('COMPLETED')}
-            className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-              statusFilter === 'COMPLETED'
-                ? 'bg-emerald-600 text-white font-bold'
-                : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
-            }`}
-          >
-            입고 완료 ({historySlips.filter((s) => s.status === 'COMPLETED').length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('PARTIAL')}
-            className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-              statusFilter === 'PARTIAL'
-                ? 'bg-blue-600 text-white font-bold'
-                : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
-            }`}
-          >
-            부분 입고 ({historySlips.filter((s) => s.status === 'PARTIAL').length})
-          </button>
+          {/* Unified Search Input */}
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="전표번호, 공급처, 품목코드, 품목명을 검색하세요..."
+              className="w-full h-11 sm:h-12 pl-10 pr-9 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-md cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
         </div>
       </div>
+
 
       {/* No Data State */}
       {filteredSlips.length === 0 && (

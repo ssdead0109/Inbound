@@ -4,21 +4,16 @@ import {
   Search,
   RefreshCw,
   Building2,
-  Tag,
-  ChevronRight,
+  ChevronDown,
   Printer,
   X,
   Boxes,
   FileSpreadsheet,
   Warehouse,
   ArrowLeft,
-  Filter,
-  Phone,
-  Clock,
-  Layers,
   MapPin,
-  CheckCircle2,
-  DollarSign
+  Clock,
+  CheckCircle2
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -34,28 +29,12 @@ import {
 } from '../../api/erpApi';
 import {
   saveMaterialsToIndexedDb,
-  searchMaterialsInIndexedDb,
-  getMaterialsCountInIndexedDb,
-  getSyncMeta,
-  setSyncMeta
+  searchMaterialsInIndexedDb
 } from '../../utils/indexedDbHelper';
 
 interface ErpMaterialSearchViewProps {
   onShowToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
-
-const QUICK_SEARCH_CHIPS = [
-  'VALVE',
-  'PUMP',
-  'CYLINDER',
-  'MOTOR',
-  'SENSOR',
-  'FILTER',
-  '호스',
-  '볼트',
-  '스위치',
-  '릴레이'
-];
 
 export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ onShowToast }) => {
   // State
@@ -66,8 +45,6 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [debouncedQuery, setDebouncedQuery] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  
-  // IndexedDB Sync States
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Full Screen Detail View
@@ -80,7 +57,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
   const [qrPrintItem, setQrPrintItem] = useState<ErpMaterial | null>(null);
   const [labelCopies, setLabelCopies] = useState<number>(1);
 
-  // Debounce search term (150ms for instant response)
+  // Debounce search term
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedQuery(searchTerm);
@@ -116,11 +93,9 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
   const executeSearch = useCallback(async (query: string, whCode: string = selectedWh) => {
     try {
       setIsLoading(true);
-      // Fetch directly from server with warehouse and query filter
       const serverResults = await searchErpMaterials(query, whCode, 80);
       setMaterials(serverResults);
 
-      // Background cache to IndexedDB if searching 'ALL'
       if (whCode === 'ALL' && !query) {
         saveMaterialsToIndexedDb(serverResults).catch(() => {});
       }
@@ -193,9 +168,9 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
   /* ------------------------------------------------------------- */
   if (selectedCode) {
     return (
-      <div className="max-w-full sm:max-w-5xl lg:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5 w-full">
+      <div className="max-w-full sm:max-w-5xl lg:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 w-full">
         
-        {/* Full Screen Top Navigation Bar */}
+        {/* Full Screen Top Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center space-x-3">
             <button
@@ -565,9 +540,9 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
   /* MAIN MATERIALS SEARCH & WAREHOUSE LIST VIEW                   */
   /* ------------------------------------------------------------- */
   return (
-    <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-5 w-full">
+    <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-3.5 w-full">
       
-      {/* 1. Header: Clean Title & Refresh Button (설명글 제거 완료) */}
+      {/* 1. Top Header: Clean Title & Refresh Button (설명문 제거 완료) */}
       <div className="bg-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md border border-slate-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
@@ -592,105 +567,53 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
         </div>
       </div>
 
-      {/* 2. Warehouse Filter Bar (창고별 선택 기능) */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-2.5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-bold text-slate-800 flex items-center gap-1.5">
-            <Warehouse className="w-4 h-4 text-indigo-600" />
-            창고 선택:
-          </span>
-          <span className="text-[11px] text-slate-500 font-medium">
-            현재 선택: <strong className="text-indigo-600 font-bold">{warehouses.find(w => w.code === selectedWh)?.name || '전체 창고'}</strong>
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
-          {warehouses.length > 0 ? (
-            warehouses.map((wh) => (
-              <button
-                key={wh.code}
-                type="button"
-                onClick={() => handleSelectWarehouse(wh.code)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 border ${
-                  selectedWh === wh.code
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                {wh.name} {wh.itemCount !== undefined && wh.code !== 'ALL' ? `(${wh.itemCount})` : ''}
-              </button>
-            ))
-          ) : (
-            <div className="flex gap-1.5">
-              {['ALL', '10013', '10014', '40001', '10024'].map((code) => (
-                <button
-                  key={code}
-                  type="button"
-                  onClick={() => handleSelectWarehouse(code)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap border ${
-                    selectedWh === code ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-700'
-                  }`}
-                >
-                  {code === 'ALL' ? '전체 창고' : code}
-                </button>
+      {/* 2. Unified Sticky Search & Warehouse Listbox Bar (상단바 고정 & 빠른검색 제거) */}
+      <div className="sticky top-14 sm:top-16 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs">
+        <div className="flex flex-col sm:flex-row items-center gap-2 max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto">
+          
+          {/* Warehouse Dropdown Listbox (창고 선택 리스트박스) */}
+          <div className="w-full sm:w-56 shrink-0 relative">
+            <select
+              value={selectedWh}
+              onChange={(e) => handleSelectWarehouse(e.target.value)}
+              className="w-full h-11 sm:h-12 pl-3.5 pr-8 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer"
+            >
+              <option value="ALL">🏢 전체 창고 (통합)</option>
+              {warehouses.filter(w => w.code !== 'ALL').map((wh) => (
+                <option key={wh.code} value={wh.code}>
+                  {wh.name} {wh.itemCount ? `(${wh.itemCount}종)` : ''}
+                </option>
               ))}
-            </div>
-          )}
+            </select>
+            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          {/* Unified Search Input */}
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="품목코드, 품목명, 규격, 랙위치, 거래처명을 검색하세요..."
+              className="w-full h-11 sm:h-12 pl-10 pr-9 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-md cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
         </div>
       </div>
 
-      {/* 3. Search & Quick Filters Bar */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
-        <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="품목코드, 품목명, 규격, 랙위치, 또는 거래처명을 입력하세요 (예: 001372200, VALVE, 펌프, MIK...)"
-            className="w-full pl-11 pr-10 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
-          />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-md"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Quick Keyword Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-          <span className="text-slate-400 text-[11px] font-bold shrink-0 flex items-center gap-1 mr-1">
-            <Tag className="w-3.5 h-3.5" /> 빠른 검색:
-          </span>
-          {QUICK_SEARCH_CHIPS.map((chip) => (
-            <button
-              key={chip}
-              onClick={() => setSearchTerm(chip)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                searchTerm === chip
-                  ? 'bg-indigo-600 text-white font-bold'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-              }`}
-            >
-              #{chip}
-            </button>
-          ))}
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              className="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 cursor-pointer whitespace-nowrap"
-            >
-              초기화
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 4. Results Section (현재고 및 창고 위치 강조, 재고등록 버튼 제거) */}
-      <div className="space-y-3">
+      {/* 3. Results Section (보유 창고 정보, 현재고, 랙위치 강조) */}
+      <div className="space-y-3 pt-1">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
             <Boxes className="w-4 h-4 text-indigo-600" />
@@ -710,7 +633,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
             </div>
             <h3 className="text-sm font-bold text-slate-800">일치하는 ERP 자재가 없습니다</h3>
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              선택한 창고 또는 검색어 조건을 변경하여 다시 검색해 보세요.
+              선택한 창고 조건 또는 검색어를 변경하여 다시 조회해 보세요.
             </p>
           </div>
         ) : (
@@ -741,25 +664,38 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                     </p>
                   </div>
 
-                  {/* Warehouse Location & Current Stock (요청 사항 반영) */}
+                  {/* Warehouse Location & Current Stock */}
                   <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
-                    {/* 창고 위치 및 랙 구역 */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500 flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-indigo-500" /> 창고 위치
+                    
+                    {/* 보유 창고 정보 (부품별 보유 창고 명시) */}
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-slate-500 flex items-center gap-1 shrink-0 mt-0.5">
+                        <Warehouse className="w-3.5 h-3.5 text-indigo-600" /> 보유 창고
                       </span>
-                      <span className="font-semibold text-slate-800 text-right truncate max-w-[170px]">
-                        {item.whName || (selectedWh !== 'ALL' ? warehouses.find(w => w.code === selectedWh)?.name : '전체 창고')}
-                        {item.zone ? ` [구역: ${item.zone}]` : ''}
+                      <span
+                        className="font-bold text-slate-800 text-right line-clamp-1 break-all"
+                        title={item.whName || '재고창고 없음'}
+                      >
+                        {item.whName || (selectedWh !== 'ALL' ? warehouses.find(w => w.code === selectedWh)?.name : '재고창고 없음')}
                       </span>
                     </div>
 
-                    {/* 현재고 수량 (눈에 띄는 뱃지) */}
+                    {/* 랙 위치 (구역 코드) */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 flex items-center gap-1 shrink-0">
+                        <MapPin className="w-3.5 h-3.5 text-amber-600" /> 랙 위치
+                      </span>
+                      <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                        {item.zone ? `구역 [ ${item.zone} ]` : '미지정'}
+                      </span>
+                    </div>
+
+                    {/* 현재고 수량 (에메랄드 강조 뱃지) */}
                     <div className="flex items-center justify-between pt-0.5">
-                      <span className="text-slate-500 flex items-center gap-1">
+                      <span className="text-slate-500 flex items-center gap-1 shrink-0">
                         <Boxes className="w-3.5 h-3.5 text-emerald-500" /> 현재고 수량
                       </span>
-                      <span className="font-mono font-black text-emerald-700 text-sm bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
+                      <span className="font-mono font-black text-emerald-700 text-sm bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-lg">
                         {(item.currentStock || 0).toLocaleString()} {item.unit || 'EA'}
                       </span>
                     </div>
@@ -800,7 +736,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
         )}
       </div>
 
-      {/* 5. Printable QR Code Label Preview Modal */}
+      {/* 4. Printable QR Code Label Preview Modal */}
       {qrPrintItem && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 p-5 space-y-4">

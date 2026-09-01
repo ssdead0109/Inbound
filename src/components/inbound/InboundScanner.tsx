@@ -14,7 +14,8 @@ import {
   Sparkles,
   Filter,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
@@ -156,10 +157,10 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleScannedText]);
 
-  // Filtered Pending Slips
+  // Filtered Pending Slips (uses unified search bar)
   const filteredSlips = pendingSlips.filter((slip) => {
-    if (!filterText.trim()) return true;
-    const q = filterText.trim().toLowerCase();
+    const q = (manualInput || filterText).trim().toLowerCase();
+    if (!q) return true;
     return (
       slip.slipNo.toLowerCase().includes(q) ||
       slip.supplierName.toLowerCase().includes(q) ||
@@ -168,99 +169,97 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
   });
 
   return (
-    <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6 w-full overflow-x-hidden">
+    <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-3.5 w-full overflow-x-hidden">
       
       {/* Hidden container for file scan */}
       <div id="file-qr-temp" className="hidden"></div>
 
-      {/* 1. Quick Action Control Panel: Camera QR Scan & Slip Search */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-3.5">
-        
-        {/* Header Title */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center shrink-0">
-              <ClipboardCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-                입고확인
-              </h2>
-              <p className="text-xs text-slate-500">
-                카메라로 QR코드를 촬영하거나 납품전표번호를 입력하여 즉시 입고를 확인하세요.
-              </p>
-            </div>
+      {/* 1. Header Banner */}
+      <div className="bg-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md border border-slate-800">
+        <div className="flex items-center space-x-2.5">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shrink-0 shadow-xs">
+            <ClipboardCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
+              입고확인 (납품서 검수)
+            </h1>
           </div>
         </div>
+      </div>
 
-        {/* Camera Scan Button & Search Form Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-1">
+      {/* 2. Unified Sticky Search & Camera Bar */}
+      <div className="sticky top-14 sm:top-16 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs">
+        <div className="flex flex-col sm:flex-row items-center gap-2 max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto">
           
           {/* Main Action: Smartphone Camera Scan Button (앱 환경에서만 노출, 웹에서는 숨김) */}
           {isNativeApp && (
-            <div className="md:col-span-5">
-              <button
-                type="button"
-                onClick={handleNativeCameraScan}
-                disabled={isProcessing}
-                className="w-full h-full min-h-[48px] px-4 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-sm font-bold flex items-center justify-center space-x-2.5 shadow-md shadow-indigo-200 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
-              >
-                <Camera className="w-5 h-5 shrink-0" />
-                <span>📷 스마트폰 카메라로 QR 촬영</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleNativeCameraScan}
+              disabled={isProcessing}
+              className="w-full sm:w-auto h-11 sm:h-12 px-4 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center space-x-2 shadow-xs shrink-0 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+            >
+              <Camera className="w-4 h-4 shrink-0" />
+              <span>📷 스마트폰 카메라 촬영</span>
+            </button>
           )}
 
-          {/* Secondary Action: Slip Number Search Input */}
-          <div className={isNativeApp ? "md:col-span-7" : "col-span-12"}>
-            <form onSubmit={handleManualSubmit} className="flex items-center space-x-2 h-full">
-              <div className="relative flex-1 h-full min-h-[48px]">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={manualInput}
-                  onChange={(e) => setManualInput(e.target.value)}
-                  placeholder="납품전표번호 입력 (예: 20080400002)"
-                  className="w-full h-full pl-10 pr-3 py-2.5 bg-slate-50 text-slate-900 placeholder-slate-400 text-sm font-medium rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 font-mono transition-all"
-                />
-              </div>
-              <button
-                type="submit"
-                className="h-full min-h-[48px] px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl transition-all shadow-xs shrink-0 cursor-pointer"
-              >
-                조회
-              </button>
-            </form>
-          </div>
-
-        </div>
-
-        {/* Camera or Scan Error Notification */}
-        {cameraError && (
-          <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-start space-x-2 animate-shake">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
-            <div className="flex-1 space-y-0.5">
-              <p className="font-bold">알림</p>
-              <p className="text-rose-700 leading-relaxed text-xs">{cameraError}</p>
+          {/* Unified Search Input */}
+          <form onSubmit={handleManualSubmit} className="flex items-center gap-2 flex-1 w-full">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
+              <input
+                type="text"
+                value={manualInput}
+                onChange={(e) => setManualInput(e.target.value)}
+                placeholder="납품전표번호, 공급처, 품목명을 검색하세요..."
+                className="w-full h-11 sm:h-12 pl-10 pr-9 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 font-mono transition-all"
+              />
+              {manualInput && (
+                <button
+                  type="button"
+                  onClick={() => setManualInput('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-md cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
-          </div>
-        )}
-
-        {/* Processing Indicator */}
-        {isProcessing && (
-          <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-center space-x-2 text-indigo-700 text-xs font-bold animate-pulse">
-            <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
-            <span>QR 코드를 분석하고 전표를 조회하고 있습니다...</span>
-          </div>
-        )}
-
+            <button
+              type="submit"
+              className="h-11 sm:h-12 px-4 sm:px-5 bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-xs shrink-0 cursor-pointer"
+            >
+              조회
+            </button>
+          </form>
+        </div>
       </div>
+
+      {/* Camera or Scan Error Notification */}
+      {cameraError && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-start space-x-2 animate-shake">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+          <div className="flex-1 space-y-0.5">
+            <p className="font-bold">알림</p>
+            <p className="text-rose-700 leading-relaxed text-xs">{cameraError}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Processing Indicator */}
+      {isProcessing && (
+        <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-center space-x-2 text-indigo-700 text-xs font-bold animate-pulse">
+          <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+          <span>QR 코드를 분석하고 전표를 조회하고 있습니다...</span>
+        </div>
+      )}
 
       {/* 2. Pending Inbound Slips List (입고 대기 내역) */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-4">
         
-        {/* Header & Filter Controls */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2.5">
+        {/* Header */}
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center space-x-2">
             <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center shrink-0">
               <Clock className="w-4 h-4" />
@@ -273,18 +272,6 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
                 {filteredSlips.length}건
               </span>
             </div>
-          </div>
-
-          {/* Quick Filter Search Input */}
-          <div className="relative w-full sm:w-64">
-            <Filter className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              placeholder="거래처, 품목, 전표 검색..."
-              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 text-slate-800 placeholder-slate-400 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 transition-all"
-            />
           </div>
         </div>
 
