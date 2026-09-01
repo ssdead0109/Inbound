@@ -279,27 +279,72 @@ router.post('/auth/login', async (req: Request, res: Response) => {
     const cleanCode = code.trim();
     const cleanPwd = typeof password === 'string' ? password.trim() : '';
 
-    const sql = `
-      SELECT 
-        RTRIM(ISNULL(담당자코드, '')) AS code,
-        RTRIM(ISNULL(담당자명, '')) AS name,
-        RTRIM(ISNULL(패스워드, '')) AS pwd,
-        ISNULL(관리자여부, 0) AS isAdmin,
-        ISNULL(단가숨김여부, 0) AS hidePrice,
-        ISNULL(사용여부, 1) AS isActive,
-        RTRIM(ISNULL(부서, '')) AS dept,
-        RTRIM(ISNULL(직책, '')) AS role
-      FROM MT_TC_담당자코드
-      WHERE 담당자코드 = @cleanCode OR 담당자명 = @cleanCode
-    `;
-
-    const rows = await mssqlAdapter.query<any>(sql, { cleanCode });
-    if (rows.length === 0) {
-      return res.status(401).json({ success: false, message: `등록되지 않은 담당자코드(${cleanCode})입니다.` });
+    // 1. Try scu100 table first
+    let userRow: any = null;
+    try {
+      const scuSql = `
+        SELECT TOP 1
+          RTRIM(ISNULL(id, '')) AS code,
+          RTRIM(ISNULL(pwd, '')) AS pwd,
+          RTRIM(ISNULL(name, id)) AS name,
+          RTRIM(ISNULL(dept_nm, '자재')) AS dept,
+          ISNULL(admin_yn, 0) AS isAdmin
+        FROM scu100
+        WHERE id = @cleanCode
+      `;
+      const scuRows = await mssqlAdapter.query<any>(scuSql, { cleanCode });
+      if (scuRows && scuRows.length > 0) {
+        const r = scuRows[0];
+        userRow = {
+          code: r.code,
+          name: r.name || r.code,
+          pwd: r.pwd || '',
+          isAdmin: r.isAdmin === 'Y' || r.isAdmin === 1,
+          hidePrice: false,
+          dept: r.dept || '자재',
+          role: (r.isAdmin === 'Y' || r.isAdmin === 1) ? '관리자' : '사원',
+        };
+      }
+    } catch {
+      // scu100 query not available, fallback
     }
 
-    const user = rows[0];
-    const dbPwd = (user.pwd || '').trim();
+    // 2. Fallback to MT_TC_담당자코드 if not found in scu100
+    if (!userRow) {
+      const sql = `
+        SELECT TOP 1
+          RTRIM(ISNULL(담당자코드, '')) AS code,
+          RTRIM(ISNULL(담당자명, '')) AS name,
+          RTRIM(ISNULL(패스워드, '')) AS pwd,
+          ISNULL(관리자여부, 0) AS isAdmin,
+          ISNULL(단가숨김여부, 0) AS hidePrice,
+          ISNULL(사용여부, 1) AS isActive,
+          RTRIM(ISNULL(부서, '')) AS dept,
+          RTRIM(ISNULL(직책, '')) AS role
+        FROM MT_TC_담당자코드
+        WHERE 담당자코드 = @cleanCode OR 담당자명 = @cleanCode
+      `;
+
+      const rows = await mssqlAdapter.query<any>(sql, { cleanCode });
+      if (rows && rows.length > 0) {
+        const user = rows[0];
+        userRow = {
+          code: user.code,
+          name: user.name,
+          pwd: user.pwd || '',
+          dept: user.dept || '자재부서',
+          role: user.role || (user.isAdmin ? '관리자' : '사원'),
+          isAdmin: Boolean(user.isAdmin),
+          hidePrice: Boolean(user.hidePrice),
+        };
+      }
+    }
+
+    if (!userRow) {
+      return res.status(401).json({ success: false, message: `등록되지 않은 ID/사번(${cleanCode})입니다.` });
+    }
+
+    const dbPwd = (userRow.pwd || '').trim();
 
     // If password is set in DB, verify it
     if (dbPwd !== '' && cleanPwd !== dbPwd) {
@@ -309,12 +354,12 @@ router.post('/auth/login', async (req: Request, res: Response) => {
     return res.json({
       success: true,
       user: {
-        code: user.code,
-        name: user.name,
-        dept: user.dept || '자재부서',
-        role: user.role || (user.isAdmin ? '관리자' : '사원'),
-        isAdmin: Boolean(user.isAdmin),
-        hidePrice: Boolean(user.hidePrice),
+        code: userRow.code,
+        name: userRow.name,
+        dept: userRow.dept,
+        role: userRow.role,
+        isAdmin: userRow.isAdmin,
+        hidePrice: userRow.hidePrice,
       },
     });
   } catch (err: any) {
@@ -331,6 +376,39 @@ router.get('/auth/users', async (_req: Request, res: Response) => {
       return res.json({ success: true, data: [] });
     }
 
+    // 1. Try scu100 first
+    try {
+      const scuSql = `
+        SELECT 
+          RTRIM(ISNULL(id, '')) AS code,
+          RTRIM(ISNULL(name, id)) AS name,
+          ISNULL(admin_yn, 0) AS isAdmin,
+          RTRIM(ISNULL(dept_nm, '자재')) AS dept,
+          CASE WHEN RTRIM(ISNULL(pwd, '')) = '' THEN 0 ELSE 1 END AS hasPassword
+        FROM scu100
+        WHERE use_yn = 'Y' OR use_yn = '1' OR use_yn IS NULL
+        ORDER BY name ASC
+      `;
+      const scuRows = await mssqlAdapter.query<any>(scuSql);
+      if (scuRows && scuRows.length > 0) {
+        return res.json({
+          success: true,
+          data: scuRows.map(r => ({
+            code: r.code,
+            name: r.name,
+            dept: r.dept || '자재',
+            role: (r.isAdmin === 'Y' || r.isAdmin === 1) ? '관리자' : '사원',
+            isAdmin: r.isAdmin === 'Y' || r.isAdmin === 1,
+            hidePrice: false,
+            hasPassword: Boolean(r.hasPassword),
+          })),
+        });
+      }
+    } catch {
+      // scu100 fallback
+    }
+
+    // 2. Fallback to MT_TC_담당자코드
     const sql = `
       SELECT 
         RTRIM(ISNULL(담당자코드, '')) AS code,
