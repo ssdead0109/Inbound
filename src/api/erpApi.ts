@@ -10,6 +10,12 @@ export interface ErpStatus {
   totalMaterials: number;
 }
 
+export interface ErpWarehouse {
+  code: string;
+  name: string;
+  itemCount?: number;
+}
+
 export interface ErpMaterial {
   code: string;
   name: string;
@@ -17,15 +23,21 @@ export interface ErpMaterial {
   unit: string;
   unitPrice: number;
   safetyStock: number;
+  basicStock?: number;
+  zone?: string; // 랙/구역 위치
   category: string;
   supplierCode: string;
   supplierName: string;
   notes: string;
   updatedAt: string;
+  whCode?: string;
+  whName?: string;
+  currentStock: number; // 현재고 수량
 }
 
 export interface ErpHistoryItem {
   slipNo: string;
+  seq?: number;
   type: string;
   subType: string;
   date: string;
@@ -33,8 +45,12 @@ export interface ErpHistoryItem {
   outQty: number;
   totalQty: number;
   unitPrice: number;
+  totalAmount?: number;
   memo: string;
+  warehouseCode?: string;
   supplierCode: string;
+  supplierName?: string;
+  managerCode?: string;
 }
 
 export interface ErpMaterialDetail {
@@ -42,22 +58,29 @@ export interface ErpMaterialDetail {
     outPrice?: number;
     supplierPhone?: string;
   };
+  warehouseStocks: {
+    whCode: string;
+    whName: string;
+    stockQty: number;
+  }[];
   history: ErpHistoryItem[];
 }
 
 export interface ErpUser {
   code: string;
   name: string;
-  dept: string;
-  role: string;
-  isAdmin: boolean;
-  hidePrice: boolean;
+  dept?: string;
+  role?: string;
+  email?: string;
+  isAdmin?: boolean;
+  hidePrice?: boolean;
   hasPassword?: boolean;
 }
 
 const API_BASE = '/api/erp';
 
 export interface ErpSyncResult {
+  success: boolean;
   isIncremental: boolean;
   count: number;
   totalCount: number;
@@ -73,9 +96,17 @@ export async function fetchErpStatus(): Promise<ErpStatus> {
   return json.data;
 }
 
-export async function syncErpMaterials(since?: string, limit: number = 3000): Promise<ErpSyncResult> {
+export async function fetchErpWarehouses(): Promise<ErpWarehouse[]> {
+  const res = await fetch(`${API_BASE}/warehouses`);
+  if (!res.ok) throw new Error('ERP 창고 목록 조회 실패');
+  const json = await res.json();
+  return json.data || [];
+}
+
+export async function syncErpMaterials(since?: string, whCode: string = 'ALL', limit: number = 3000): Promise<ErpSyncResult> {
   const params = new URLSearchParams();
   if (since) params.set('since', since);
+  if (whCode) params.set('whCode', whCode);
   params.set('limit', limit.toString());
 
   const res = await fetch(`${API_BASE}/materials/sync?${params.toString()}`);
@@ -84,9 +115,10 @@ export async function syncErpMaterials(since?: string, limit: number = 3000): Pr
   return json;
 }
 
-export async function searchErpMaterials(query: string = '', limit: number = 50): Promise<ErpMaterial[]> {
+export async function searchErpMaterials(query: string = '', whCode: string = 'ALL', limit: number = 60): Promise<ErpMaterial[]> {
   const params = new URLSearchParams();
   if (query) params.set('query', query);
+  if (whCode) params.set('whCode', whCode);
   params.set('limit', limit.toString());
 
   const res = await fetch(`${API_BASE}/materials?${params.toString()}`);

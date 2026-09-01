@@ -48,23 +48,64 @@ interface MaterialCache {
   totalCount: number;
   lastFetchedAt: number;
 }
-let serverMaterialsCache: MaterialCache | null = null;
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache
+const warehouseCaches = new Map<string, MaterialCache>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache per warehouse
 
-// Helper to fetch and cache all materials
-async function getOrUpdateMaterialsCache(forceRefresh = false): Promise<MaterialCache | null> {
+// GET /api/erp/warehouses - 재고 보유 창고 목록 조회
+router.get('/warehouses', async (req: Request, res: Response) => {
+  try {
+    const isConnected = await mssqlAdapter.connect();
+    if (!isConnected) {
+      return res.status(503).json({ success: false, error: 'ERP MSSQL 연결 실패' });
+    }
+    const rows = await mssqlAdapter.query<any>(`
+      SELECT DISTINCT RTRIM(w.wh_cd) AS code, RTRIM(w.wh_nm) AS name, COUNT(DISTINCT a.itm_id) AS itemCount
+      FROM LES200 a
+      INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd
+      WHERE a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
+        AND (ISNULL(a.bas_qty,0) + ISNULL(a.in_qty,0) - ISNULL(a.out_qty,0)) > 0
+      GROUP BY w.wh_cd, w.wh_nm
+      ORDER BY itemCount DESC
+    `);
+    const list = [
+      { code: 'ALL', name: '전체 창고', itemCount: rows.reduce((acc, r) => acc + (r.itemCount || 0), 0) },
+      ...rows
+    ];
+    res.json({ success: true, data: list });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Helper to fetch and cache materials with current stock and warehouse/zone
+async function getOrUpdateMaterialsCache(forceRefresh = false, whCode = 'ALL'): Promise<MaterialCache | null> {
+  const cleanWh = (whCode || 'ALL').trim();
   const now = Date.now();
-  if (!forceRefresh && serverMaterialsCache && (now - serverMaterialsCache.lastFetchedAt < CACHE_TTL_MS)) {
-    return serverMaterialsCache;
+  const cached = warehouseCaches.get(cleanWh);
+  if (!forceRefresh && cached && (now - cached.lastFetchedAt < CACHE_TTL_MS)) {
+    return cached;
   }
 
   const isConnected = await mssqlAdapter.connect();
   if (!isConnected) {
-    return serverMaterialsCache; // Return stale cache if available when offline
+    return cached || null;
   }
 
   try {
+    const isSpecificWh = cleanWh !== 'ALL';
     const sql = `
+      WITH StockCTE AS (
+        SELECT 
+          m.itm_cd,
+          ${isSpecificWh ? 'MAX(w.wh_cd) AS whCode, MAX(w.wh_nm) AS whName,' : "'' AS whCode, '' AS whName,"}
+          SUM(ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) AS currentStock
+        FROM LES200 a
+        INNER JOIN DMA100 m ON m.itm_id = a.itm_id
+        ${isSpecificWh ? 'INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd' : ''}
+        WHERE a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
+          ${isSpecificWh ? `AND a.wh_cd = @whCode` : ''}
+        GROUP BY m.itm_cd
+      )
       SELECT TOP (5000)
         RTRIM(P.품목코드) AS code,
         RTRIM(P.품목명) AS name,
@@ -72,26 +113,33 @@ async function getOrUpdateMaterialsCache(forceRefresh = false): Promise<Material
         RTRIM(P.최소단위) AS unit,
         ISNULL(P.입고단가, 0) AS unitPrice,
         ISNULL(P.안전재고, 0) AS safetyStock,
+        ISNULL(P.기초재고, 0) AS basicStock,
+        RTRIM(ISNULL(P.구역코드, '')) AS zone,
         RTRIM(ISNULL(P.중분류코드, '')) AS category,
         RTRIM(ISNULL(P.거래처코드, '')) AS supplierCode,
         RTRIM(ISNULL(C.거래처명, '')) AS supplierName,
         RTRIM(ISNULL(P.특이사항, '')) AS notes,
-        ISNULL(P.수정일, '') AS updatedAt
+        ISNULL(P.수정일, '') AS updatedAt,
+        ISNULL(S.whCode, ${isSpecificWh ? '@whCode' : "''"}) AS whCode,
+        ISNULL(S.whName, '') AS whName,
+        ISNULL(S.currentStock, 0) AS currentStock
       FROM MT_TC_품목코드 P
       LEFT JOIN MT_TC_거래처코드 C ON P.거래처코드 = C.거래처코드
-      ORDER BY P.수정일 DESC, P.품목코드 ASC
+      ${isSpecificWh ? 'INNER JOIN StockCTE S ON S.itm_cd = P.품목코드' : 'LEFT JOIN StockCTE S ON S.itm_cd = P.품목코드'}
+      ORDER BY S.currentStock DESC, P.수정일 DESC, P.품목코드 ASC
     `;
 
-    const items = await mssqlAdapter.query<any>(sql);
-    serverMaterialsCache = {
+    const items = await mssqlAdapter.query<any>(sql, isSpecificWh ? { whCode: cleanWh } : {});
+    const cacheEntry = {
       data: items,
       totalCount: items.length,
       lastFetchedAt: now,
     };
-    return serverMaterialsCache;
+    warehouseCaches.set(cleanWh, cacheEntry);
+    return cacheEntry;
   } catch (err) {
     console.error('[Material Cache Update Failed]', err);
-    return serverMaterialsCache;
+    return cached || null;
   }
 }
 
@@ -99,9 +147,10 @@ async function getOrUpdateMaterialsCache(forceRefresh = false): Promise<Material
 router.get('/materials/sync', async (req: Request, res: Response) => {
   try {
     const since = typeof req.query.since === 'string' ? req.query.since.trim() : '';
+    const whCode = typeof req.query.whCode === 'string' ? req.query.whCode.trim() : 'ALL';
     const limit = Math.min(Math.max(parseInt(req.query.limit as string || '2000', 10), 1), 5000);
 
-    const cache = await getOrUpdateMaterialsCache();
+    const cache = await getOrUpdateMaterialsCache(false, whCode);
     if (!cache) {
       return res.status(503).json({
         success: false,
@@ -112,9 +161,8 @@ router.get('/materials/sync', async (req: Request, res: Response) => {
     let diffItems: any[] = [];
     let isIncremental = false;
 
-    if (since) {
+    if (since && whCode === 'ALL') {
       isIncremental = true;
-      // Filter records updated after 'since'
       diffItems = cache.data.filter(item => item.updatedAt && item.updatedAt > since);
     } else {
       isIncremental = false;
@@ -138,14 +186,15 @@ router.get('/materials/sync', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/erp/materials - ERP 자재 검색 (서버 캐시 우선 조회로 DB 부하 99% 차단)
+// GET /api/erp/materials - ERP 자재 검색 (창고 필터 & 현재고 & 랙위치 포함)
 router.get('/materials', async (req: Request, res: Response) => {
   try {
     const query = typeof req.query.query === 'string' ? req.query.query.trim().toLowerCase() : '';
+    const whCode = typeof req.query.whCode === 'string' ? req.query.whCode.trim() : 'ALL';
     const limit = Math.min(Math.max(parseInt(req.query.limit as string || '50', 10), 1), 200);
 
-    // 1. Try serving from in-memory cache
-    const cache = await getOrUpdateMaterialsCache();
+    // 1. Try serving from in-memory cache for this warehouse
+    const cache = await getOrUpdateMaterialsCache(false, whCode);
     if (cache && cache.data.length > 0) {
       let filtered = cache.data;
       if (query) {
@@ -153,6 +202,7 @@ router.get('/materials', async (req: Request, res: Response) => {
           item.code.toLowerCase().includes(query) ||
           item.name.toLowerCase().includes(query) ||
           (item.spec && item.spec.toLowerCase().includes(query)) ||
+          (item.zone && item.zone.toLowerCase().includes(query)) ||
           (item.supplierName && item.supplierName.toLowerCase().includes(query))
         );
       }
@@ -175,7 +225,20 @@ router.get('/materials', async (req: Request, res: Response) => {
     }
 
     const likeQ = `%${query}%`;
+    const isSpecificWh = whCode !== 'ALL';
     const sql = `
+      WITH StockCTE AS (
+        SELECT 
+          m.itm_cd,
+          ${isSpecificWh ? 'MAX(w.wh_cd) AS whCode, MAX(w.wh_nm) AS whName,' : "'' AS whCode, '' AS whName,"}
+          SUM(ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) AS currentStock
+        FROM LES200 a
+        INNER JOIN DMA100 m ON m.itm_id = a.itm_id
+        ${isSpecificWh ? 'INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd' : ''}
+        WHERE a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
+          ${isSpecificWh ? `AND a.wh_cd = @whCode` : ''}
+        GROUP BY m.itm_cd
+      )
       SELECT TOP (${limit})
         RTRIM(P.품목코드) AS code,
         RTRIM(P.품목명) AS name,
@@ -183,18 +246,24 @@ router.get('/materials', async (req: Request, res: Response) => {
         RTRIM(P.최소단위) AS unit,
         ISNULL(P.입고단가, 0) AS unitPrice,
         ISNULL(P.안전재고, 0) AS safetyStock,
+        ISNULL(P.기초재고, 0) AS basicStock,
+        RTRIM(ISNULL(P.구역코드, '')) AS zone,
         RTRIM(ISNULL(P.중분류코드, '')) AS category,
         RTRIM(ISNULL(P.거래처코드, '')) AS supplierCode,
         RTRIM(ISNULL(C.거래처명, '')) AS supplierName,
         RTRIM(ISNULL(P.특이사항, '')) AS notes,
-        ISNULL(P.수정일, '') AS updatedAt
+        ISNULL(P.수정일, '') AS updatedAt,
+        ISNULL(S.whCode, ${isSpecificWh ? '@whCode' : "''"}) AS whCode,
+        ISNULL(S.whName, '') AS whName,
+        ISNULL(S.currentStock, 0) AS currentStock
       FROM MT_TC_품목코드 P
       LEFT JOIN MT_TC_거래처코드 C ON P.거래처코드 = C.거래처코드
-      WHERE (@query = '' OR P.품목명 LIKE @likeQ OR P.품목코드 LIKE @likeQ OR P.규격 LIKE @likeQ OR C.거래처명 LIKE @likeQ)
-      ORDER BY P.수정일 DESC, P.품목코드 ASC
+      ${isSpecificWh ? 'INNER JOIN StockCTE S ON S.itm_cd = P.품목코드' : 'LEFT JOIN StockCTE S ON S.itm_cd = P.품목코드'}
+      WHERE (@query = '' OR P.품목명 LIKE @likeQ OR P.품목코드 LIKE @likeQ OR P.규격 LIKE @likeQ OR P.구역코드 LIKE @likeQ OR C.거래처명 LIKE @likeQ)
+      ORDER BY S.currentStock DESC, P.수정일 DESC, P.품목코드 ASC
     `;
 
-    const items = await mssqlAdapter.query(sql, { query, likeQ });
+    const items = await mssqlAdapter.query(sql, { query, likeQ, whCode });
 
     res.json({
       success: true,
@@ -207,7 +276,7 @@ router.get('/materials', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/erp/materials/:code - 자재 상세 정보 및 최근 입출고 수불 내역
+// GET /api/erp/materials/:code - 자재 상세 정보, 창고별 현재고 및 전체 입출고 수불 내역
 router.get('/materials/:code', async (req: Request, res: Response) => {
   try {
     const code = req.params.code.trim();
@@ -226,6 +295,8 @@ router.get('/materials/:code', async (req: Request, res: Response) => {
         ISNULL(P.입고단가, 0) AS unitPrice,
         ISNULL(P.출고단가, 0) AS outPrice,
         ISNULL(P.안전재고, 0) AS safetyStock,
+        ISNULL(P.기초재고, 0) AS basicStock,
+        RTRIM(ISNULL(P.구역코드, '')) AS zone,
         RTRIM(ISNULL(P.중분류코드, '')) AS category,
         RTRIM(ISNULL(P.거래처코드, '')) AS supplierCode,
         RTRIM(ISNULL(C.거래처명, '')) AS supplierName,
@@ -241,29 +312,57 @@ router.get('/materials/:code', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'ERP에서 품목을 찾을 수 없습니다.' });
     }
 
-    // 2. 최근 입출고 이력 (15건)
+    // 2. 창고별 현재고 현황
+    const whStockSql = `
+      SELECT
+        RTRIM(w.wh_cd) AS whCode,
+        RTRIM(w.wh_nm) AS whName,
+        ISNULL(SUM(a.bas_qty + a.in_qty - a.out_qty), 0) AS stockQty
+      FROM LES200 a
+      INNER JOIN DMA100 m ON m.itm_id = a.itm_id
+      INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd
+      WHERE m.itm_cd = @code
+        AND a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
+      GROUP BY w.wh_cd, w.wh_nm
+      HAVING ISNULL(SUM(a.bas_qty + a.in_qty - a.out_qty), 0) <> 0
+      ORDER BY stockQty DESC
+    `;
+    const warehouseStocks = await mssqlAdapter.query(whStockSql, { code });
+    const totalCurrentStock = warehouseStocks.reduce((sum: number, ws: any) => sum + Number(ws.stockQty || 0), 0);
+
+    // 3. 전체 입출고 수불 내역 (최대 100건)
     const histSql = `
-      SELECT TOP 15
-        RTRIM(전표번호) AS slipNo,
-        RTRIM(구분) AS type,
-        RTRIM(세부구분) AS subType,
-        ISNULL(날짜, '') AS date,
-        ISNULL(입고수량, 0) AS inQty,
-        ISNULL(출고수량, 0) AS outQty,
-        ISNULL(수량, 0) AS totalQty,
-        ISNULL(단가, 0) AS unitPrice,
-        RTRIM(ISNULL(비고, '')) AS memo,
-        RTRIM(ISNULL(거래처코드, '')) AS supplierCode
-      FROM MT_T_입출고
-      WHERE 품목코드 = @code
-      ORDER BY 날짜 DESC, 일련번호 DESC
+      SELECT TOP 100
+        RTRIM(T.전표번호) AS slipNo,
+        ISNULL(T.일련번호, 0) AS seq,
+        RTRIM(T.구분) AS type,
+        RTRIM(T.세부구분) AS subType,
+        ISNULL(T.날짜, '') AS date,
+        ISNULL(T.입고수량, 0) AS inQty,
+        ISNULL(T.출고수량, 0) AS outQty,
+        ISNULL(T.수량, 0) AS totalQty,
+        ISNULL(T.단가, 0) AS unitPrice,
+        ISNULL(T.합계, 0) AS totalAmount,
+        RTRIM(ISNULL(T.비고, '')) AS memo,
+        RTRIM(ISNULL(T.창고코드, '')) AS warehouseCode,
+        RTRIM(ISNULL(T.거래처코드, '')) AS supplierCode,
+        RTRIM(ISNULL(C.거래처명, '')) AS supplierName,
+        RTRIM(ISNULL(T.담당자코드, '')) AS managerCode
+      FROM MT_T_입출고 T
+      LEFT JOIN MT_TC_거래처코드 C ON T.거래처코드 = C.거래처코드
+      WHERE T.품목코드 = @code
+      ORDER BY T.날짜 DESC, T.일련번호 DESC
     `;
     const history = await mssqlAdapter.query(histSql, { code });
 
     res.json({
       success: true,
       data: {
-        item: itemRes[0],
+        item: {
+          ...itemRes[0],
+          currentStock: totalCurrentStock,
+        },
+        warehouseStocks,
         history,
       },
     });

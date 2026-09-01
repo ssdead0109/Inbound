@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
   Camera,
+  ClipboardCheck,
   Search,
   AlertCircle,
   Clock,
@@ -179,14 +180,14 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center shrink-0">
-              <Camera className="w-4 h-4" />
+              <ClipboardCheck className="w-4 h-4" />
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-                납품확인서 검수 및 조회
+                입고확인
               </h2>
               <p className="text-xs text-slate-500">
-                카메라로 QR코드를 촬영하거나 전표번호를 직접 입력하여 즉시 입고 검수를 시작하세요.
+                카메라로 QR코드를 촬영하거나 납품전표번호를 입력하여 즉시 입고를 확인하세요.
               </p>
             </div>
           </div>

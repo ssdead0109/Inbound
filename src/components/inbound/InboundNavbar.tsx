@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
-  QrCode,
-  Clock,
+  ClipboardCheck,
   History,
   User,
   Database,
@@ -81,7 +80,7 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
             </div>
           </div>
 
-          {/* Desktop Navigation Tabs */}
+          {/* Desktop Navigation Tabs: 입고확인, 입고 내역, ERP 자재조회 */}
           <nav className="hidden md:flex items-center space-x-1.5 bg-slate-100/90 p-1.5 rounded-xl border border-slate-200">
             <button
               onClick={() => onSelectTab('SCANNER')}
@@ -91,20 +90,8 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
               }`}
             >
-              <QrCode className="w-4 h-4" />
-              <span>QR 스캔</span>
-            </button>
-
-            <button
-              onClick={() => onSelectTab('PENDING')}
-              className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer relative ${
-                currentTab === 'PENDING'
-                  ? 'bg-white text-indigo-600 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-              }`}
-            >
-              <Clock className="w-4 h-4" />
-              <span>입고 대기</span>
+              <ClipboardCheck className="w-4 h-4" />
+              <span>입고확인</span>
               {pendingCount > 0 && (
                 <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-amber-500 text-white">
                   {pendingCount}
