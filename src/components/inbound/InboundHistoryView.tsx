@@ -20,10 +20,13 @@ import {
   Download,
   ZoomIn,
   Printer,
-  RefreshCw
+  RefreshCw,
+  RotateCcw
 } from 'lucide-react';
 import { InboundSlip } from '../../types/inbound';
 import { registerBackHandler } from '../../utils/backHandler';
+import { cancelInboundReceipt } from '../../utils/syncQueueHelper';
+import { soundHelper } from '../../utils/soundHelper';
 
 interface InboundHistoryViewProps {
   slips: InboundSlip[];
@@ -105,6 +108,33 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
     setPhotoViewer((prev) => ({ ...prev, isOpen: false }));
   };
 
+  const [cancellingSlipNo, setCancellingSlipNo] = useState<string | null>(null);
+
+  const handleCancelInbound = async (slip: InboundSlip) => {
+    const isErp =
+      slip.supplierCode.startsWith('SUP-ERP') ||
+      slip.slipNo.length === 11 ||
+      Boolean(slip.memo && slip.memo.includes('ERP'));
+
+    const confirmMsg = `납품확인서 [${slip.slipNo}]의 입고 처리를 취소하시겠습니까?\n\n• 로컬 자재 재고가 입고 전 수량으로 원복됩니다.\n• 전표가 '입고 대기' 목록으로 복구됩니다.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      setCancellingSlipNo(slip.slipNo);
+      const res = await cancelInboundReceipt(slip.slipNo, isErp);
+      soundHelper.playSuccessChime();
+      alert(res.message || `납품확인서 [${slip.slipNo}]의 입고가 취소되었습니다.`);
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err: any) {
+      soundHelper.playErrorBuzzer();
+      alert(err.message || '입고 취소 중 오류가 발생했습니다.');
+    } finally {
+      setCancellingSlipNo(null);
+    }
+  };
+
   // Register Back Handler: Close photo viewer on smartphone back button
   useEffect(() => {
     if (!photoViewer.isOpen) return;
@@ -180,45 +210,43 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
       
       {/* 1. Header Banner */}
       <div className="bg-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md border border-slate-800">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center space-x-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center space-x-2.5 min-w-0">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shrink-0 shadow-xs">
               <History className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
-                  입고 완료 내역
-                </h1>
-              </div>
+            <div className="flex items-center space-x-2 min-w-0">
+              <h1 className="text-base sm:text-xl font-black tracking-tight text-white truncate">
+                입고 완료 내역
+              </h1>
             </div>
           </div>
 
-          {/* View Mode Toggle */}
-          <div className="flex items-center space-x-1 bg-white/10 p-1 rounded-xl border border-white/10 text-xs self-start sm:self-auto">
+          {/* View Mode Toggle: 전표별 / 품목별 (동일 라인 우측 정렬) */}
+          <div className="flex items-center space-x-1 bg-white/10 p-1 rounded-xl border border-white/10 text-xs shrink-0">
             <button
               type="button"
               onClick={() => setViewMode('BY_SLIP')}
-              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+              className={`flex items-center space-x-1 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'BY_SLIP'
-                  ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                  ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-300 hover:text-white'
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>전표별 보기</span>
+              <span>전표별</span>
             </button>
             <button
               type="button"
               onClick={() => setViewMode('BY_ITEM')}
-              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+              className={`flex items-center space-x-1 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'BY_ITEM'
-                  ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                  ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-300 hover:text-white'
               }`}
             >
               <List className="w-3.5 h-3.5" />
-              <span>품목별 보기</span>
+              <span>품목별</span>
             </button>
           </div>
         </div>
@@ -486,6 +514,26 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
                         메모: {slip.memo}
                       </p>
                     )}
+
+                    {/* 세부품목내역 하단: 입고취소 액션 바 */}
+                    <div className="pt-2.5 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                      <div className="text-[11px] text-slate-500 font-medium">
+                        {slip.inboundDate ? `입고일시: ${slip.inboundDate.slice(0, 16).replace('T', ' ')}` : '입고 확정 완료'}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={cancellingSlipNo === slip.slipNo}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCancelInbound(slip);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 active:scale-95 text-rose-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:shadow-xs disabled:opacity-50"
+                        title="입고 처리를 취소하고 입고 대기 목록으로 복원합니다"
+                      >
+                        <RotateCcw className={`w-3.5 h-3.5 ${cancellingSlipNo === slip.slipNo ? 'animate-spin' : ''}`} />
+                        <span>{cancellingSlipNo === slip.slipNo ? '취소 처리 중...' : '입고 취소'}</span>
+                      </button>
+                    </div>
 
                   </div>
                 )}

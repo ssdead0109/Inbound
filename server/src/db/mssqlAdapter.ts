@@ -66,8 +66,8 @@ export class MssqlAdapter {
           encrypt: this.config.options?.encrypt ?? false,
           trustServerCertificate: this.config.options?.trustServerCertificate ?? true,
         },
-        connectionTimeout: 3000,
-        requestTimeout: 10000,
+        connectionTimeout: 15000,
+        requestTimeout: 30000,
         pool: {
           max: 10,
           min: 0,
@@ -114,6 +114,16 @@ export class MssqlAdapter {
       user: this.config.user,
       database: this.config.database,
     };
+  }
+
+  public async updateConfig(newConfig: Partial<MssqlConfig>): Promise<boolean> {
+    await this.close();
+    this.config = {
+      ...this.config,
+      ...newConfig,
+    };
+    this.lastConnectFailed = false;
+    return await this.connect(true);
   }
 
   public async close() {

@@ -282,6 +282,72 @@ export function processInboundReceiving(payload: InboundReceivePayload): {
   };
 }
 
+/**
+ * 입고 확정 취소 및 재고 롤백 트랜잭션
+ */
+export function cancelInboundReceiving(slipNo: string): {
+  success: boolean;
+  slip?: InboundSlip;
+  message: string;
+} {
+  const slip = getInboundSlipByNo(slipNo);
+  if (!slip) {
+    return {
+      success: false,
+      message: `납품확인서 [${slipNo}]를 찾을 수 없습니다.`,
+    };
+  }
+
+  const now = new Date().toISOString();
+
+  // 1. 재고 롤백 (가산되었던 입고 수량만큼 차감)
+  for (const item of slip.items) {
+    const receivedQty = item.receivedQty || 0;
+    if (receivedQty > 0) {
+      const invItem = getItemByCode(item.itemCode);
+      if (invItem) {
+        const revertedQty = Math.max(0, invItem.quantity - receivedQty);
+        updateItem(invItem.id, { quantity: revertedQty });
+
+        createLog({
+          id: `log-cancel-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          itemId: invItem.id,
+          itemCode: invItem.code,
+          itemName: invItem.name,
+          type: 'OUT',
+          quantity: receivedQty,
+          previousQty: invItem.quantity,
+          newQty: revertedQty,
+          timestamp: now,
+          manager: slip.manager || '관리자',
+          reason: `입고 취소 [전표: ${slipNo}]`,
+        });
+      }
+    }
+
+    // 품목 상태 및 수량 초기화 (대기 상태로 복구)
+    item.receivedQty = 0;
+    item.defectQty = 0;
+    item.defectReason = undefined;
+    item.status = 'WAITING';
+  }
+
+  // 2. 전표 상태를 대기(WAITING)로 복원
+  slip.status = 'WAITING';
+  slip.totalReceivedQty = 0;
+  slip.totalDefectQty = 0;
+  slip.inboundDate = undefined;
+  slip.updatedAt = now;
+
+  saveInboundToDisk();
+
+  return {
+    success: true,
+    slip,
+    message: `납품확인서 [${slip.slipNo}]의 입고 처리가 취소되고 입고 대기 목록으로 복원되었습니다.`,
+  };
+}
+
 export const DEFAULT_WAREHOUSES: string[] = [
   '특장자재창고',
   '본관 자재1창고',

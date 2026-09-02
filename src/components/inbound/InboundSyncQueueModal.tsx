@@ -113,10 +113,10 @@ export const InboundSyncQueueModal: React.FC<InboundSyncQueueModalProps> = ({
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('이 대기 작업을 목록에서 삭제하시겠습니까?')) return;
+    if (!window.confirm('이 대기 작업을 취소하고 목록에서 삭제하시겠습니까?\n\n• 해당 전표의 입고 처리가 취소되고 입고 대기 목록으로 복구됩니다.\n• 로컬 가산 재고가 원복됩니다.')) return;
     try {
       await deleteQueueItemById(id);
-      onShowToast('대기 작업이 삭제되었습니다.', 'info');
+      onShowToast('대기 작업이 삭제되고 입고 처리가 취소되었습니다.', 'info');
       await loadQueue();
     } catch (err: any) {
       onShowToast(err.message || '삭제 실패', 'error');

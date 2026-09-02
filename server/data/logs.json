@@ -1,1 +1,41 @@
-[]
+[
+  {
+    "id": "log-inbound-1788332428604-101",
+    "itemId": "item-inb-1788332428603-756",
+    "itemCode": "000573000",
+    "itemName": "S-VALVE",
+    "type": "IN",
+    "quantity": 1,
+    "previousQty": 0,
+    "newQty": 1,
+    "manager": "개발자 (오프라인 모드) (자재관리부)",
+    "reason": "납품확인서 입고 [전표: 20080300002, 거래처: 신우]",
+    "timestamp": "2026-09-02T07:00:28.603Z"
+  },
+  {
+    "id": "log-inbound-1788330013198-103",
+    "itemId": "item-inb-1788329975610-881",
+    "itemCode": "900060050",
+    "itemName": "DU-BUSH",
+    "type": "IN",
+    "quantity": 20,
+    "previousQty": 20,
+    "newQty": 40,
+    "manager": "개발자 (오프라인 모드) (자재관리부)",
+    "reason": "납품확인서 입고 [전표: 20080400002, 거래처: 제이에스비(JSB)]",
+    "timestamp": "2026-09-02T06:20:13.198Z"
+  },
+  {
+    "id": "log-inbound-1788329975610-820",
+    "itemId": "item-inb-1788329975610-881",
+    "itemCode": "900060050",
+    "itemName": "DU-BUSH",
+    "type": "IN",
+    "quantity": 20,
+    "previousQty": 0,
+    "newQty": 20,
+    "manager": "개발자 (오프라인 모드) (자재관리부)",
+    "reason": "납품확인서 입고 [전표: 20080400002, 거래처: 제이에스비(JSB)]",
+    "timestamp": "2026-09-02T06:19:35.610Z"
+  }
+]

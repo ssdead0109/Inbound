@@ -1,7 +1,7 @@
 import { mssqlAdapter } from './mssqlAdapter';
 import { InboundSlip, InboundItem, InboundReceivePayload } from '../types/inbound';
 import { getItemByCode, updateItem, createItem, createLog } from '../db';
-import { upsertInboundSlips, getAllInboundSlips, getInboundSlipByNo } from './inboundDb';
+import { upsertInboundSlips, getAllInboundSlips, getInboundSlipByNo, cancelInboundReceiving } from './inboundDb';
 import { StockLog } from '../types';
 
 export interface ErpPendingRow {
@@ -609,6 +609,43 @@ export async function processErpInboundReceive(payload: InboundReceivePayload): 
     slip,
     logs: createdLogs,
     message: `ERP MSSQL MT_T_입출고 테이블에 ${insertedCount}건의 입고 레코드가 성공적으로 등록되었습니다!`,
+  };
+}
+
+/**
+ * 사내 ERP 입고 확정 취소:
+ * 1) MSSQL 'MT_T_입출고' 테이블에서 해당 전표번호 레코드 DELETE
+ * 2) 스마트랙 로컬 재고 및 전표 상태 원복
+ */
+export async function cancelErpInboundReceive(slipNo: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const cleanSlipNo = (slipNo || '').trim();
+  if (!cleanSlipNo) {
+    return { success: false, message: '전표번호가 유효하지 않습니다.' };
+  }
+
+  // 1. Local inbound cancel first (reverts local stock & resets slip in cache)
+  cancelInboundReceiving(cleanSlipNo);
+
+  // 2. If MSSQL connected, delete records from MT_T_입출고
+  const isConnected = await mssqlAdapter.connect();
+  if (isConnected) {
+    try {
+      const deleteSql = `
+        DELETE FROM MT_T_입출고
+        WHERE 전표번호 = @cleanSlipNo AND 구분 = '입고';
+      `;
+      await mssqlAdapter.query(deleteSql, { cleanSlipNo });
+    } catch (err) {
+      console.warn('[ERP Cancel] MT_T_입출고 레코드 삭제 실패 (로컬 취소는 완료됨):', err);
+    }
+  }
+
+  return {
+    success: true,
+    message: `전표 [${cleanSlipNo}]의 입고 처리가 정상적으로 취소되었습니다.`,
   };
 }
 

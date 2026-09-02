@@ -1,5 +1,37 @@
 [
   {
+    "id": "item-inb-1788332428603-756",
+    "code": "000573000",
+    "name": "S-VALVE",
+    "spec": "200*180(COMMON USE)",
+    "category": "납품자재",
+    "warehouse": "화성부품영업창고",
+    "rackLocation": "미지정",
+    "quantity": 1,
+    "unit": "EA",
+    "safetyStock": 10,
+    "price": 600000,
+    "supplier": "신우",
+    "createdAt": "2026-09-02T07:00:28.603Z",
+    "updatedAt": "2026-09-02T07:00:28.603Z"
+  },
+  {
+    "id": "item-inb-1788329975610-881",
+    "code": "900060050",
+    "name": "DU-BUSH",
+    "spec": "60*50",
+    "category": "납품자재",
+    "warehouse": "화성부품영업창고",
+    "rackLocation": "미지정",
+    "quantity": 40,
+    "unit": "EA",
+    "safetyStock": 10,
+    "price": 1100,
+    "supplier": "제이에스비(JSB)",
+    "createdAt": "2026-09-02T06:19:35.610Z",
+    "updatedAt": "2026-09-02T06:20:13.198Z"
+  },
+  {
     "id": "item-erp-000000000-1788242901554",
     "code": "000000000",
     "name": "소모품",

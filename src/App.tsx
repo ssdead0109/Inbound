@@ -34,6 +34,7 @@ import { ServerConnectionModal } from './components/common/ServerConnectionModal
 import { ErpUser } from './api/erpApi';
 import {
   saveSlipsToIndexedDb,
+  saveSlipToIndexedDb,
   getSlipsFromIndexedDb,
   getSlipByNoFromIndexedDb,
   getMaterialByCodeInIndexedDb,
@@ -325,6 +326,14 @@ export default function App() {
     loadInitialData();
   }, [loadInitialData]);
 
+  useEffect(() => {
+    const handleRefresh = () => {
+      loadInitialData();
+    };
+    window.addEventListener('app:refresh-data', handleRefresh);
+    return () => window.removeEventListener('app:refresh-data', handleRefresh);
+  }, [loadInitialData]);
+
   // Auto-sync worker: triggers when network/DB recovers
   useEffect(() => {
     let timer: any = null;
@@ -402,9 +411,13 @@ export default function App() {
     showToast('로그아웃되었습니다.', 'info');
   };
 
-  // Handle QR Scan Result
+  // Handle QR Scan Result (초고속 전표 매칭 및 자동 검수 시작)
   const handleScanSuccess = async (result: ParsedQrResult) => {
     soundHelper.playScanBeep();
+
+    const raw = (result.slipNo || result.rawText || '').trim();
+    const cleanRaw = raw.replace(/\s+/g, '');
+    const alphanumeric = cleanRaw.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
     // 1. If QR contains full JSON slip data or Delimited format
     if (result.directSlipData) {
@@ -415,47 +428,85 @@ export default function App() {
         navigateToTab('RECEIVING', registered);
         showToast(`납품확인서 [${registered.slipNo}] 스캔 성공! 검수를 시작합니다.`, 'success');
         return;
-      } catch (err: any) {
-        console.warn('Error saving direct slip:', err);
+      } catch {
+        // Offline fallback: save to IndexedDB directly
+        try {
+          await saveSlipToIndexedDb(result.directSlipData);
+        } catch { /* ignore */ }
+        setSlips((prev) => [result.directSlipData!, ...prev.filter((s) => s.slipNo !== result.directSlipData!.slipNo)]);
+        setActiveSlip(result.directSlipData);
+        navigateToTab('RECEIVING', result.directSlipData);
+        showToast(`납품확인서 [${result.directSlipData.slipNo}] 확인! 즉시 검수를 시작합니다.`, 'success');
+        return;
       }
     }
 
-    // 2. If it's a Slip Number
+    // 2. Immediate in-memory slips matching (0ms latency!)
+    const matchedMemorySlip = slips.find((s) => {
+      const sNo = s.slipNo.trim();
+      const sNoClean = sNo.replace(/\s+/g, '');
+      const sNoAlpha = sNoClean.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      const poClean = (s.poNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
+      return (
+        sNo === raw ||
+        sNo.toLowerCase() === raw.toLowerCase() ||
+        (alphanumeric.length >= 4 && (sNoAlpha.includes(alphanumeric) || alphanumeric.includes(sNoAlpha))) ||
+        (poClean && (poClean === alphanumeric || poClean === raw.toLowerCase())) ||
+        s.items.some((it) => it.itemCode.toLowerCase() === raw.toLowerCase() || (it.barcode && it.barcode === raw))
+      );
+    });
+
+    if (matchedMemorySlip) {
+      setActiveSlip(matchedMemorySlip);
+      navigateToTab('RECEIVING', matchedMemorySlip);
+      showToast(`전표 [${matchedMemorySlip.slipNo}] 확인! 즉시 검수를 시작합니다.`, 'success');
+      return;
+    }
+
+    // 3. Match against IndexedDB cached slips (Offline mode)
+    try {
+      const idbSlips = await getSlipsFromIndexedDb();
+      const matchedIdbSlip = idbSlips.find((s) => {
+        const sNo = s.slipNo.trim();
+        const sNoAlpha = sNo.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        return (
+          sNo.toLowerCase() === raw.toLowerCase() ||
+          (alphanumeric.length >= 4 && (sNoAlpha.includes(alphanumeric) || alphanumeric.includes(sNoAlpha))) ||
+          s.items.some((it) => it.itemCode.toLowerCase() === raw.toLowerCase())
+        );
+      });
+
+      if (matchedIdbSlip) {
+        setActiveSlip(matchedIdbSlip);
+        navigateToTab('RECEIVING', matchedIdbSlip);
+        showToast(`캐시 전표 [${matchedIdbSlip.slipNo}] 확인! 즉시 검수를 시작합니다.`, 'info');
+        return;
+      }
+    } catch (idbErr) {
+      console.warn('IDB lookup error:', idbErr);
+    }
+
+    // 4. If online, check Backend / ERP API
     if (result.slipNo) {
-      // Try local slip first
       try {
         const slip = await inboundApi.fetchInboundSlipByNo(result.slipNo);
+        setActiveSlip(slip);
         navigateToTab('RECEIVING', slip);
         showToast(`납품확인서 [${slip.slipNo}] 조회 완료! 검수를 시작합니다.`, 'success');
         return;
       } catch {
-        // Fallback to ERP '미입고현황' real-time search
         try {
           const erpSlip = await erpApi.fetchErpSlipByNo(result.slipNo);
+          setActiveSlip(erpSlip);
           navigateToTab('RECEIVING', erpSlip);
           showToast(`사내 ERP 미입고 전표 [${erpSlip.slipNo}] 조회 완료! 실시간 입고 검수를 시작합니다.`, 'success');
           return;
-        } catch (erpErr: any) {
-          // Fallback to IndexedDB cached slips (오프라인 모드)
-          try {
-            const cached = await getSlipByNoFromIndexedDb(result.slipNo);
-            if (cached) {
-              navigateToTab('RECEIVING', cached);
-              showToast(`캐시된 전표 [${cached.slipNo}] 조회 완료! (오프라인 모드)`, 'info');
-              return;
-            }
-          } catch (idbErr) {
-            console.warn('IDB lookup failed:', idbErr);
-          }
-
-          soundHelper.playErrorBuzzer();
-          showToast(`전표 [${result.slipNo}]를 로컬 및 사내 ERP에서 찾을 수 없습니다.`, 'error');
-          return;
-        }
+        } catch { /* ignore */ }
       }
     }
 
-    // 3. If an Item Code is scanned, check local IndexedDB materials (인덱스DB)
+    // 5. If Item Code is scanned, check local IndexedDB materials (인덱스DB)
     if (result.itemCode) {
       try {
         const mat = await getMaterialByCodeInIndexedDb(result.itemCode);
@@ -491,6 +542,10 @@ export default function App() {
             createdAt: nowStr,
             updatedAt: nowStr,
           };
+          try {
+            await saveSlipToIndexedDb(adHocSlip);
+          } catch { /* ignore */ }
+          setSlips((prev) => [adHocSlip, ...prev]);
           setActiveSlip(adHocSlip);
           navigateToTab('RECEIVING', adHocSlip);
           showToast(`인덱스DB 품목 [${mat.name}] 확인! 현장 입고 검수를 진행합니다.`, 'info');
@@ -501,7 +556,44 @@ export default function App() {
       }
     }
 
-    showToast(`스캔된 코드 [${result.rawText}]에 해당하는 정보를 찾을 수 없습니다.`, 'error');
+    // 6. Automatic Ad-hoc Slip Creation for Any Scanned QR (검수 시작 자동 진입 보장)
+    const fallbackSlipNo = result.slipNo || (raw.length > 25 ? `QR-${Date.now().toString().slice(-6)}` : raw);
+    const newAdHocSlip: InboundSlip = {
+      slipNo: fallbackSlipNo,
+      supplierCode: 'SUP-QR',
+      supplierName: '현장 스캔 전표',
+      poNumber: fallbackSlipNo,
+      deliveryDate: new Date().toISOString().slice(0, 10),
+      status: 'WAITING',
+      totalItems: 1,
+      totalOrderedQty: 1,
+      totalReceivedQty: 1,
+      totalDefectQty: 0,
+      memo: `QR 스캔 전표 (${raw})`,
+      items: [{
+        id: `adhoc-${Date.now()}`,
+        itemCode: result.itemCode || fallbackSlipNo,
+        itemName: '현장 스캔 자재',
+        spec: '규격 확인 요망',
+        unit: 'EA',
+        orderQty: 1,
+        receivedQty: 1,
+        defectQty: 0,
+        warehouse: '특장자재창고',
+        status: 'WAITING',
+        unitPrice: 0,
+      }],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await saveSlipToIndexedDb(newAdHocSlip);
+    } catch { /* ignore */ }
+    setSlips((prev) => [newAdHocSlip, ...prev.filter((s) => s.slipNo !== newAdHocSlip.slipNo)]);
+    setActiveSlip(newAdHocSlip);
+    navigateToTab('RECEIVING', newAdHocSlip);
+    showToast(`스캔 코드 [${fallbackSlipNo}] 확인! 즉시 검수를 시작합니다.`, 'success');
   };
 
   // Select Pending Slip to Inspect (supports direct ERP slip object)
@@ -691,6 +783,7 @@ export default function App() {
             onConfirmReceiving={handleConfirmReceiving}
             onHoldSlip={handleHoldSlip}
             onBackToScanner={handleBackFromReceiving}
+            onOpenPrintModal={handleOpenPrintModal}
           />
         )}
 

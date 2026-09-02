@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import {
   Camera,
   ClipboardCheck,
@@ -24,11 +24,12 @@ import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/
 import { soundHelper } from '../../utils/soundHelper';
 import { parseInboundQrCode, ParsedQrResult } from '../../utils/inboundQrParser';
 import { InboundSlip } from '../../types/inbound';
+import { InboundLiveScannerModal } from './InboundLiveScannerModal';
 
 interface InboundScannerProps {
   onScanSuccess: (result: ParsedQrResult) => void;
   pendingSlips: InboundSlip[];
-  onSelectPendingSlip: (slipNo: string) => void;
+  onSelectPendingSlip: (slipNo: string, directSlip?: InboundSlip) => void;
 }
 
 const InboundScannerComponent: React.FC<InboundScannerProps> = ({
@@ -40,6 +41,7 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
   const [filterText, setFilterText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isLiveScannerOpen, setIsLiveScannerOpen] = useState(false);
 
   // Remember selected warehouse in localStorage
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>(() => {
@@ -55,6 +57,7 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
   // Handle scanned raw text
   const handleScannedText = useCallback(
     async (decodedText: string) => {
+      setIsLiveScannerOpen(false);
       if (isProcessing) return;
       setIsProcessing(true);
       soundHelper.playScanBeep();
@@ -71,6 +74,31 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
     },
     [isProcessing, onScanSuccess]
   );
+
+  // Helper to crop center 65% for high-accuracy QR decoding
+  const createCenterCropBlob = (dataUrl: string): Promise<Blob | null> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const size = Math.min(img.width, img.height) * 0.65;
+          canvas.width = 600;
+          canvas.height = 600;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return resolve(null);
+          const sx = (img.width - size) / 2;
+          const sy = (img.height - size) / 2;
+          ctx.drawImage(img, sx, sy, size, size, 0, 0, 600, 600);
+          canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.9);
+        } catch {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  };
 
   // Native Android/iOS Camera Scan (Uses native CAMERA permission, completely HTTPS-free!)
   const handleNativeCameraScan = async () => {
@@ -89,9 +117,11 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
         }
       }
 
-      // 2. Open Native Android Camera Viewfinder
+      // 2. Open Native Android Camera Viewfinder (Optimized resolution for instant QR decoding)
       const image = await CapCamera.getPhoto({
-        quality: 95,
+        quality: 90,
+        width: 1280,
+        height: 1280,
         allowEditing: false,
         resultType: CameraResultType.DataUrl,
         source: CameraSource.Camera,
@@ -105,18 +135,37 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
         return;
       }
 
-      // 3. Scan QR from captured native image
-      const html5Qr = new Html5Qrcode('file-qr-temp');
-      const fetchRes = await fetch(image.dataUrl);
-      const blob = await fetchRes.blob();
-      const file = new File([blob], 'captured_qr.jpg', { type: 'image/jpeg' });
-      const decodedText = await html5Qr.scanFile(file, true);
-      handleScannedText(decodedText);
+      // 3. Scan QR from captured native image (Full + Center Crop Fallback)
+      const html5Qr = new Html5Qrcode('file-qr-temp', {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        verbose: false,
+      });
+
+      let decodedText: string | null = null;
+      try {
+        const fetchRes = await fetch(image.dataUrl);
+        const blob = await fetchRes.blob();
+        const file = new File([blob], 'captured_qr.jpg', { type: 'image/jpeg' });
+        decodedText = await html5Qr.scanFile(file, true);
+      } catch {
+        const cropBlob = await createCenterCropBlob(image.dataUrl);
+        if (cropBlob) {
+          const cropFile = new File([cropBlob], 'crop_qr.jpg', { type: 'image/jpeg' });
+          decodedText = await html5Qr.scanFile(cropFile, true);
+        }
+      }
+
+      if (decodedText) {
+        handleScannedText(decodedText);
+      } else {
+        soundHelper.playErrorBuzzer();
+        setCameraError('QR 코드를 감지하지 못했습니다. 조명이 밝은 곳에서 QR 코드가 정면에 오도록 다시 촬영해주세요.');
+      }
     } catch (err: any) {
       console.warn('Native camera scan error:', err);
       if (err.message && !err.message.includes('cancelled') && !err.message.includes('canceled')) {
         soundHelper.playErrorBuzzer();
-        setCameraError('QR 코드를 인식하지 못했습니다. QR 코드가 정면에서 선명하게 보이도록 다시 촬영해주세요.');
+        setCameraError('QR 코드 촬영 중 오류가 발생했습니다: ' + (err.message || ''));
       }
     } finally {
       setIsProcessing(false);
@@ -229,18 +278,17 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
       >
         <div className="flex flex-col sm:flex-row items-center gap-2 max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto">
           
-          {/* Main Action: Smartphone Camera Scan Button (앱 환경에서만 노출, 웹에서는 숨김) */}
-          {isNativeApp && (
-            <button
-              type="button"
-              onClick={handleNativeCameraScan}
-              disabled={isProcessing}
-              className="w-full sm:w-auto h-11 sm:h-12 px-4 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center space-x-2 shadow-xs shrink-0 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
-            >
-              <Camera className="w-4 h-4 shrink-0" />
-              <span>📷 스마트폰 카메라 촬영</span>
-            </button>
-          )}
+          {/* Main Action: Continuous Live Camera QR Scanner / Native Camera Scan */}
+          <button
+            type="button"
+            onClick={isNativeApp ? handleNativeCameraScan : () => setIsLiveScannerOpen(true)}
+            disabled={isProcessing}
+            className="w-full sm:w-auto h-11 sm:h-12 px-4 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs sm:text-sm font-black flex items-center justify-center space-x-2 shadow-md shadow-indigo-500/25 shrink-0 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+          >
+            <Camera className="w-4 h-4 shrink-0 text-indigo-200" />
+            <span>📷 QR 카메라 스캔</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          </button>
 
           {/* Warehouse Dropdown Listbox (창고 선택 기억 기능) */}
           <div className="w-full sm:w-52 shrink-0 relative">
@@ -339,7 +387,7 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
             {filteredSlips.map((slip) => (
               <div
                 key={slip.slipNo}
-                onClick={() => onSelectPendingSlip(slip.slipNo)}
+                onClick={() => onSelectPendingSlip(slip.slipNo, slip)}
                 className="group p-4 bg-slate-50 hover:bg-white border border-slate-200 hover:border-indigo-300 rounded-xl transition-all shadow-2xs hover:shadow-xs cursor-pointer flex flex-col justify-between space-y-3"
               >
                 <div>
@@ -449,6 +497,13 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
         )}
 
       </div>
+
+      {/* Real-time Live Camera QR Scanner Modal */}
+      <InboundLiveScannerModal
+        isOpen={isLiveScannerOpen}
+        onClose={() => setIsLiveScannerOpen(false)}
+        onScan={(scanned) => handleScannedText(scanned)}
+      />
 
     </div>
   );

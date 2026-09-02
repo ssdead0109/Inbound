@@ -61,6 +61,16 @@ export const InboundSlipPrintModal: React.FC<InboundSlipPrintModalProps> = ({
     });
   }, [isOpen, onClose]);
 
+  // Toggle body class for print isolation
+  useEffect(() => {
+    if (isOpen) {
+      document.body.classList.add('is-print-modal-active');
+      return () => {
+        document.body.classList.remove('is-print-modal-active');
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen || !slip) return null;
 
   const handlePrint = () => {
@@ -70,7 +80,7 @@ export const InboundSlipPrintModal: React.FC<InboundSlipPrintModalProps> = ({
   const displaySlip = erpSlip || slip;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-white print:static">
+    <div className="printable-slip-modal fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:static print:inset-auto print:p-0 print:m-0 print:bg-white print:overflow-visible">
       
       {/* Modal Container */}
       <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full max-h-[94vh] flex flex-col shadow-2xl overflow-hidden print:border-0 print:shadow-none print:max-w-none print:w-full">

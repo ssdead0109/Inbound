@@ -258,6 +258,25 @@ export async function processErpInboundReceive(payload: InboundReceivePayload): 
 }
 
 /**
+ * ERP MSSQL 실시간 입고 확정 취소 및 MT_T_입출고 레코드 삭제
+ */
+export async function cancelErpInboundReceive(slipNo: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const res = await fetch(`${API_BASE}/inbound/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slipNo }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || json.message || 'ERP 입고 취소 실패');
+  }
+  return json;
+}
+
+/**
  * 사내 ERP 담당자코드 & 패스워드 로그인 인증
  */
 export async function loginErpUser(code: string, password?: string): Promise<ErpUser> {

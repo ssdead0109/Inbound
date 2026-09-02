@@ -5,12 +5,12 @@
     "supplierName": "제이에스비(JSB)",
     "poNumber": "20080400002",
     "deliveryDate": "2020-08-04",
-    "status": "WAITING",
+    "status": "COMPLETED",
     "totalItems": 1,
     "totalOrderedQty": 20,
-    "totalReceivedQty": 0,
+    "totalReceivedQty": 20,
     "totalDefectQty": 0,
-    "manager": "안성규",
+    "manager": "개발자 (오프라인 모드) (자재관리부)",
     "memo": "당일 발송 요청드립니다",
     "items": [
       {
@@ -24,13 +24,15 @@
         "defectQty": 0,
         "warehouse": "화성부품영업창고",
         "unitPrice": 1100,
-        "status": "WAITING",
+        "status": "COMPLETED",
         "barcode": "900060050-20",
-        "notes": "당일 발송 요청드립니다"
+        "notes": "당일 발송 요청드립니다",
+        "defectReason": ""
       }
     ],
     "createdAt": "2026-09-02T03:22:27.850Z",
-    "updatedAt": "2026-09-02T03:22:27.850Z"
+    "updatedAt": "2026-09-02T06:20:13.198Z",
+    "inboundDate": "2026-09-02T06:20:13.198Z"
   },
   {
     "slipNo": "20080300002",
@@ -38,12 +40,12 @@
     "supplierName": "신우",
     "poNumber": "20080300002",
     "deliveryDate": "2020-08-04",
-    "status": "WAITING",
+    "status": "COMPLETED",
     "totalItems": 1,
     "totalOrderedQty": 1,
-    "totalReceivedQty": 0,
+    "totalReceivedQty": 1,
     "totalDefectQty": 0,
-    "manager": "이병훈",
+    "manager": "개발자 (오프라인 모드) (자재관리부)",
     "memo": "경동 화성 양감 송산 110(010-2332-9396)",
     "items": [
       {
@@ -57,13 +59,15 @@
         "defectQty": 0,
         "warehouse": "화성부품영업창고",
         "unitPrice": 600000,
-        "status": "WAITING",
+        "status": "COMPLETED",
         "barcode": "000573000-1",
-        "notes": ""
+        "notes": "",
+        "defectReason": ""
       }
     ],
     "createdAt": "2026-09-02T03:22:27.850Z",
-    "updatedAt": "2026-09-02T03:22:27.850Z"
+    "updatedAt": "2026-09-02T07:00:28.603Z",
+    "inboundDate": "2026-09-02T07:00:28.603Z"
   },
   {
     "slipNo": "20080300001",

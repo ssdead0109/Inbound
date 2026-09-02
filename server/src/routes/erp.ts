@@ -44,6 +44,55 @@ router.get('/status', async (_req: Request, res: Response) => {
   }
 });
 
+// POST /api/erp/config - MSSQL DB 서버 IP 및 포트 동적 변경 및 즉시 연결 테스트
+router.post('/config', async (req: Request, res: Response) => {
+  try {
+    const { server, port } = req.body;
+    const updates: any = {};
+    if (server && typeof server === 'string') {
+      updates.server = server.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    }
+    if (port) {
+      const parsedPort = parseInt(String(port).trim(), 10);
+      if (!isNaN(parsedPort) && parsedPort > 0) {
+        updates.port = parsedPort;
+      }
+    }
+
+    const isConnected = await mssqlAdapter.updateConfig(updates);
+    const status = mssqlAdapter.getStatus();
+
+    let totalCount = 0;
+    if (isConnected) {
+      const countRes = await mssqlAdapter.query<{ total: number }>('SELECT COUNT(*) AS total FROM MT_TC_품목코드').catch(() => []);
+      totalCount = countRes[0]?.total || 0;
+    }
+
+    res.json({
+      success: true,
+      isConnected,
+      data: {
+        isConnected,
+        server: status.server,
+        port: status.port,
+        database: status.database,
+        user: status.user,
+        totalMaterials: totalCount,
+      },
+    });
+  } catch (err: any) {
+    res.json({
+      success: false,
+      isConnected: false,
+      error: err.message || 'DB 연결 설정 변경 실패',
+      data: {
+        isConnected: false,
+        ...mssqlAdapter.getStatus(),
+      },
+    });
+  }
+});
+
 // In-memory cache for materials to eliminate redundant MSSQL reads
 interface MaterialCache {
   data: any[];
@@ -531,6 +580,22 @@ router.post('/inbound/receive', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('[ERP Inbound Receive Error]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/erp/inbound/cancel - ERP 입고 취소 및 MT_T_입출고 DELETE
+router.post('/inbound/cancel', async (req: Request, res: Response) => {
+  try {
+    const { cancelErpInboundReceive } = await import('../db/erpInboundDb');
+    const { slipNo } = req.body;
+    if (!slipNo) {
+      return res.status(400).json({ success: false, message: '전표번호(slipNo)는 필수입니다.' });
+    }
+    const result = await cancelErpInboundReceive(slipNo);
+    res.json(result);
+  } catch (err: any) {
+    console.error('[ERP Inbound Cancel Error]', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

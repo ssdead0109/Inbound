@@ -14,8 +14,8 @@ import {
   getSlipByNoFromIndexedDb
 } from './indexedDbHelper';
 import { InboundReceivePayload, InboundSlip } from '../types/inbound';
-import { processErpInboundReceive, fetchErpStatus } from '../api/erpApi';
-import { processInboundReceive as processLocalReceive } from '../api/inbound';
+import { processErpInboundReceive, fetchErpStatus, cancelErpInboundReceive } from '../api/erpApi';
+import { processInboundReceive as processLocalReceive, cancelInboundSlipApi } from '../api/inbound';
 import { soundHelper } from './soundHelper';
 
 export const SYNC_QUEUE_CHANGE_EVENT = 'smartrack:sync-queue-changed';
@@ -247,11 +247,97 @@ export async function retrySingleQueueItem(id: string): Promise<boolean> {
 }
 
 /**
- * 대기 큐 항목 삭제
+ * 대기 큐 항목 삭제 (연관된 전표의 입고 처리도 자동 취소 및 재고 원복)
  */
 export async function deleteQueueItemById(id: string): Promise<void> {
+  try {
+    const queue = await getQueueItems();
+    const target = queue.find((it) => it.id === id);
+    if (target && target.slipNo) {
+      // 연관 전표 입고 취소 및 로컬 재고 롤백
+      await cancelInboundReceipt(target.slipNo, false);
+    }
+  } catch (err) {
+    console.warn('Failed reverting slip during queue delete:', err);
+  }
+
   await removeQueueItem(id);
   notifyQueueChanged();
+}
+
+/**
+ * 입고 확정 전표 취소 처리:
+ * 1) 대기 큐(sync_queue)에 있는 경우 큐에서 제거
+ * 2) 로컬 서버 재고 롤백 및 전표 WAITING 복구 API 호출
+ * 3) ERP 실시간 전표인 경우 ERP 취소 API 호출
+ * 4) IndexedDB 전표 캐시를 WAITING 상태로 롤백
+ * 5) 전역 새로고침 이벤트 트리거
+ */
+export async function cancelInboundReceipt(
+  slipNo: string,
+  isErp?: boolean
+): Promise<{ success: boolean; message: string }> {
+  const cleanSlipNo = (slipNo || '').trim();
+  if (!cleanSlipNo) return { success: false, message: '전표번호가 유효하지 않습니다.' };
+
+  // 1. 대기 큐에서 제거
+  try {
+    const queue = await getQueueItems();
+    const matchedItems = queue.filter((it) => it.slipNo === cleanSlipNo);
+    for (const item of matchedItems) {
+      await removeQueueItem(item.id);
+    }
+  } catch (qErr) {
+    console.warn('Failed clearing from queue:', qErr);
+  }
+
+  // 2. 로컬 서버 취소 API 호출 (로컬 재고 롤백)
+  try {
+    await cancelInboundSlipApi(cleanSlipNo);
+  } catch (localErr) {
+    console.warn('Local cancel API call failed (continuing with offline fallback):', localErr);
+  }
+
+  // 3. ERP 취소 API 호출 (ERP 전표인 경우)
+  if (isErp) {
+    try {
+      await cancelErpInboundReceive(cleanSlipNo);
+    } catch (erpErr) {
+      console.warn('ERP cancel API call failed:', erpErr);
+    }
+  }
+
+  // 4. IndexedDB 전표 상태 복구
+  try {
+    const slip = await getSlipByNoFromIndexedDb(cleanSlipNo);
+    if (slip) {
+      slip.status = 'WAITING';
+      slip.totalReceivedQty = 0;
+      slip.totalDefectQty = 0;
+      slip.inboundDate = undefined;
+      slip.updatedAt = new Date().toISOString();
+      slip.items.forEach((it) => {
+        it.status = 'WAITING';
+        it.receivedQty = 0;
+        it.defectQty = 0;
+        it.defectReason = undefined;
+      });
+      await saveSlipToIndexedDb(slip);
+    }
+  } catch (idbErr) {
+    console.warn('IndexedDB slip rollback failed:', idbErr);
+  }
+
+  // 5. 알림 및 전역 갱신 이벤트 트리거
+  notifyQueueChanged();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app:refresh-data'));
+  }
+
+  return {
+    success: true,
+    message: `납품확인서 [${cleanSlipNo}]의 입고 처리가 취소되고 입고 대기 목록으로 복원되었습니다.`,
+  };
 }
 
 /**

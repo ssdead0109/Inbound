@@ -5,6 +5,7 @@ import {
   createInboundSlip,
   updateInboundSlipStatus,
   processInboundReceiving,
+  cancelInboundReceiving,
   getInboundStats,
   getWarehouses,
   INITIAL_INBOUND_SLIPS,
@@ -97,6 +98,20 @@ router.post('/receive', (req: Request, res: Response) => {
         logs: result.logs,
       },
     });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/inbound/slips/:slipNo/cancel - 입고 확정 취소 및 재고 롤백
+router.post('/slips/:slipNo/cancel', (req: Request, res: Response) => {
+  try {
+    const { slipNo } = req.params;
+    const result = cancelInboundReceiving(slipNo);
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -74,6 +74,24 @@ export async function processInboundReceive(payload: InboundReceivePayload): Pro
   };
 }
 
+export async function cancelInboundSlipApi(slipNo: string): Promise<{
+  success: boolean;
+  slip?: InboundSlip;
+  message: string;
+}> {
+  const res = await fetch(`${API_BASE}/slips/${encodeURIComponent(slipNo)}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.message || '입고 취소에 실패했습니다.');
+  }
+
+  return json;
+}
+
 export async function createInboundSlipApi(slip: Partial<InboundSlip>): Promise<InboundSlip> {
   const res = await fetch(`${API_BASE}/slips`, {
     method: 'POST',
