@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { mssqlAdapter } from '../db/mssqlAdapter';
 import { getItemByCode, createItem } from '../db';
 import { InventoryItem } from '../types';
@@ -48,8 +50,9 @@ interface MaterialCache {
   totalCount: number;
   lastFetchedAt: number;
 }
-const warehouseCaches = new Map<string, MaterialCache>();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache per warehouse
+let globalMaterialsCache: MaterialCache | null = null;
+let globalCacheFetchPromise: Promise<MaterialCache | null> | null = null;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes global cache
 
 // GET /api/erp/warehouses - 재고 보유 창고 목록 조회
 router.get('/warehouses', async (req: Request, res: Response) => {
@@ -77,72 +80,78 @@ router.get('/warehouses', async (req: Request, res: Response) => {
   }
 });
 
-// Helper to fetch and cache materials with current stock and warehouse/zone
-async function getOrUpdateMaterialsCache(forceRefresh = false, whCode = 'ALL'): Promise<MaterialCache | null> {
-  const cleanWh = (whCode || 'ALL').trim();
+// Helper to fetch and cache materials with current stock and warehouse/zone (단일 통합 마스터 캐시)
+async function getOrUpdateMaterialsCache(forceRefresh = false): Promise<MaterialCache | null> {
   const now = Date.now();
-  const cached = warehouseCaches.get(cleanWh);
-  if (!forceRefresh && cached && (now - cached.lastFetchedAt < CACHE_TTL_MS)) {
-    return cached;
+  if (!forceRefresh && globalMaterialsCache && (now - globalMaterialsCache.lastFetchedAt < CACHE_TTL_MS)) {
+    return globalMaterialsCache;
   }
 
-  const isConnected = await mssqlAdapter.connect();
-  if (!isConnected) {
-    return cached || null;
+  // 중복 쿼리 방지: 이미 쿼리가 실행 중이면 동일한 Promise를 공유
+  if (globalCacheFetchPromise) {
+    return globalCacheFetchPromise;
   }
 
-  try {
-    const isSpecificWh = cleanWh !== 'ALL';
-    const sql = `
-      WITH StockCTE AS (
-        SELECT 
-          m.itm_cd,
-          RTRIM(a.wh_cd) AS whCode,
-          RTRIM(w.wh_nm) AS whName,
-          SUM(ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) AS currentStock
-        FROM LES200 a
-        INNER JOIN DMA100 m ON m.itm_id = a.itm_id
-        INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd
-        WHERE a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
-          ${isSpecificWh ? `AND a.wh_cd = @whCode` : ''}
-          AND (ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) > 0
-        GROUP BY m.itm_cd, a.wh_cd, w.wh_nm
-      )
-      SELECT TOP (10000)
-        RTRIM(P.품목코드) AS code,
-        RTRIM(P.품목명) AS name,
-        RTRIM(P.규격) AS spec,
-        RTRIM(P.최소단위) AS unit,
-        ISNULL(P.입고단가, 0) AS unitPrice,
-        ISNULL(P.안전재고, 0) AS safetyStock,
-        ISNULL(P.기초재고, 0) AS basicStock,
-        RTRIM(ISNULL(P.구역코드, '')) AS zone,
-        RTRIM(ISNULL(P.중분류코드, '')) AS category,
-        RTRIM(ISNULL(P.거래처코드, '')) AS supplierCode,
-        RTRIM(ISNULL(C.거래처명, '')) AS supplierName,
-        RTRIM(ISNULL(P.특이사항, '')) AS notes,
-        ISNULL(P.수정일, '') AS updatedAt,
-        ISNULL(S.whCode, ${isSpecificWh ? '@whCode' : "''"}) AS whCode,
-        ISNULL(S.whName, '') AS whName,
-        ISNULL(S.currentStock, 0) AS currentStock
-      FROM MT_TC_품목코드 P
-      LEFT JOIN MT_TC_거래처코드 C ON P.거래처코드 = C.거래처코드
-      ${isSpecificWh ? 'INNER JOIN StockCTE S ON S.itm_cd = P.품목코드' : 'LEFT JOIN StockCTE S ON S.itm_cd = P.품목코드'}
-      ORDER BY S.currentStock DESC, P.수정일 DESC, P.품목코드 ASC
-    `;
+  globalCacheFetchPromise = (async () => {
+    const isConnected = await mssqlAdapter.connect();
+    if (!isConnected) {
+      return globalMaterialsCache || null;
+    }
 
-    const items = await mssqlAdapter.query<any>(sql, isSpecificWh ? { whCode: cleanWh } : {});
-    const cacheEntry = {
-      data: items,
-      totalCount: items.length,
-      lastFetchedAt: now,
-    };
-    warehouseCaches.set(cleanWh, cacheEntry);
-    return cacheEntry;
-  } catch (err) {
-    console.error('[Material Cache Update Failed]', err);
-    return cached || null;
-  }
+    try {
+      const sql = `
+        WITH StockCTE AS (
+          SELECT 
+            m.itm_cd,
+            RTRIM(a.wh_cd) AS whCode,
+            RTRIM(w.wh_nm) AS whName,
+            SUM(ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) AS currentStock
+          FROM LES200 a
+          INNER JOIN DMA100 m ON m.itm_id = a.itm_id
+          INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd
+          WHERE a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
+            AND (ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) > 0
+          GROUP BY m.itm_cd, a.wh_cd, w.wh_nm
+        )
+        SELECT TOP (15000)
+          RTRIM(P.품목코드) AS code,
+          RTRIM(P.품목명) AS name,
+          RTRIM(P.규격) AS spec,
+          RTRIM(P.최소단위) AS unit,
+          ISNULL(P.입고단가, 0) AS unitPrice,
+          ISNULL(P.안전재고, 0) AS safetyStock,
+          ISNULL(P.기초재고, 0) AS basicStock,
+          RTRIM(ISNULL(P.구역코드, '')) AS zone,
+          RTRIM(ISNULL(P.중분류코드, '')) AS category,
+          RTRIM(ISNULL(P.거래처코드, '')) AS supplierCode,
+          RTRIM(ISNULL(C.거래처명, '')) AS supplierName,
+          RTRIM(ISNULL(P.특이사항, '')) AS notes,
+          ISNULL(P.수정일, '') AS updatedAt,
+          ISNULL(S.whCode, '') AS whCode,
+          ISNULL(S.whName, '') AS whName,
+          ISNULL(S.currentStock, 0) AS currentStock
+        FROM MT_TC_품목코드 P
+        LEFT JOIN MT_TC_거래처코드 C ON P.거래처코드 = C.거래처코드
+        LEFT JOIN StockCTE S ON S.itm_cd = P.품목코드
+        ORDER BY S.currentStock DESC, P.수정일 DESC, P.품목코드 ASC
+      `;
+
+      const items = await mssqlAdapter.query<any>(sql);
+      globalMaterialsCache = {
+        data: items,
+        totalCount: items.length,
+        lastFetchedAt: Date.now(),
+      };
+      return globalMaterialsCache;
+    } catch (err) {
+      console.error('[Global Material Cache Update Failed]', err);
+      return globalMaterialsCache || null;
+    } finally {
+      globalCacheFetchPromise = null;
+    }
+  })();
+
+  return globalCacheFetchPromise;
 }
 
 // GET /api/erp/materials/sync - 인덱스DB 증분 동기화 엔드포인트
@@ -150,9 +159,9 @@ router.get('/materials/sync', async (req: Request, res: Response) => {
   try {
     const since = typeof req.query.since === 'string' ? req.query.since.trim() : '';
     const whCode = typeof req.query.whCode === 'string' ? req.query.whCode.trim() : 'ALL';
-    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '2000', 10), 1), 5000);
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '3000', 10), 1), 15000);
 
-    const cache = await getOrUpdateMaterialsCache(false, whCode);
+    const cache = await getOrUpdateMaterialsCache(false);
     if (!cache) {
       return res.status(503).json({
         success: false,
@@ -160,15 +169,18 @@ router.get('/materials/sync', async (req: Request, res: Response) => {
       });
     }
 
-    let diffItems: any[] = [];
-    let isIncremental = false;
+    let diffItems = cache.data;
+    if (whCode && whCode !== 'ALL') {
+      diffItems = diffItems.filter(item => item.whCode === whCode || item.whName === whCode);
+    }
 
-    if (since && whCode === 'ALL') {
+    let isIncremental = false;
+    if (since) {
       isIncremental = true;
-      diffItems = cache.data.filter(item => item.updatedAt && item.updatedAt > since);
+      diffItems = diffItems.filter(item => item.updatedAt && item.updatedAt > since);
     } else {
       isIncremental = false;
-      diffItems = cache.data.slice(0, limit);
+      diffItems = diffItems.slice(0, limit);
     }
 
     const latestUpdated = cache.data.length > 0 ? (cache.data[0].updatedAt || '') : '';
@@ -188,91 +200,52 @@ router.get('/materials/sync', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/erp/materials - ERP 자재 검색 (창고 필터 & 현재고 & 랙위치 포함)
+// GET /api/erp/materials - ERP 자재 검색 (서버 인메모리 초고속 <1ms 필터링)
 router.get('/materials', async (req: Request, res: Response) => {
   try {
     const query = typeof req.query.query === 'string' ? req.query.query.trim().toLowerCase() : '';
     const whCode = typeof req.query.whCode === 'string' ? req.query.whCode.trim() : 'ALL';
-    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '50', 10), 1), 200);
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '60', 10), 1), 500);
+    const offset = Math.max(parseInt(req.query.offset as string || '0', 10), 0);
 
-    // 1. Try serving from in-memory cache for this warehouse
-    const cache = await getOrUpdateMaterialsCache(false, whCode);
-    if (cache && cache.data.length > 0) {
+    // 1. 단일 글로벌 인메모리 캐시에서 즉시 필터링
+    const cache = await getOrUpdateMaterialsCache(false);
+    if (cache && cache.data && cache.data.length > 0) {
       let filtered = cache.data;
+
+      // 1) 창고 인메모리 필터링 (< 0.5ms)
+      if (whCode && whCode !== 'ALL') {
+        filtered = filtered.filter(item => item.whCode === whCode || item.whName === whCode);
+      }
+
+      // 2) 검색어 인메모리 필터링 (< 1ms)
       if (query) {
-        filtered = cache.data.filter(item =>
-          item.code.toLowerCase().includes(query) ||
-          item.name.toLowerCase().includes(query) ||
+        filtered = filtered.filter(item =>
+          (item.code && item.code.toLowerCase().includes(query)) ||
+          (item.name && item.name.toLowerCase().includes(query)) ||
           (item.spec && item.spec.toLowerCase().includes(query)) ||
           (item.zone && item.zone.toLowerCase().includes(query)) ||
           (item.supplierName && item.supplierName.toLowerCase().includes(query))
         );
       }
+
+      const pagedData = filtered.slice(offset, offset + limit);
       return res.json({
         success: true,
-        count: Math.min(filtered.length, limit),
-        total: cache.totalCount,
+        count: pagedData.length,
+        total: filtered.length,
+        hasMore: offset + limit < filtered.length,
+        offset,
+        limit,
         cached: true,
-        data: filtered.slice(0, limit),
+        data: pagedData,
       });
     }
 
-    // 2. Fallback to direct query if cache empty
-    const isConnected = await mssqlAdapter.connect();
-    if (!isConnected) {
-      return res.status(503).json({
-        success: false,
-        error: 'ERP MSSQL 데이터베이스에 연결할 수 없습니다.',
-      });
-    }
-
-    const likeQ = `%${query}%`;
-    const isSpecificWh = whCode !== 'ALL';
-    const sql = `
-      WITH StockCTE AS (
-        SELECT 
-          m.itm_cd,
-          RTRIM(a.wh_cd) AS whCode,
-          RTRIM(w.wh_nm) AS whName,
-          SUM(ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) AS currentStock
-        FROM LES200 a
-        INNER JOIN DMA100 m ON m.itm_id = a.itm_id
-        INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd
-        WHERE a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
-          ${isSpecificWh ? `AND a.wh_cd = @whCode` : ''}
-          AND (ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) > 0
-        GROUP BY m.itm_cd, a.wh_cd, w.wh_nm
-      )
-      SELECT TOP (${limit})
-        RTRIM(P.품목코드) AS code,
-        RTRIM(P.품목명) AS name,
-        RTRIM(P.규격) AS spec,
-        RTRIM(P.최소단위) AS unit,
-        ISNULL(P.입고단가, 0) AS unitPrice,
-        ISNULL(P.안전재고, 0) AS safetyStock,
-        ISNULL(P.기초재고, 0) AS basicStock,
-        RTRIM(ISNULL(P.구역코드, '')) AS zone,
-        RTRIM(ISNULL(P.중분류코드, '')) AS category,
-        RTRIM(ISNULL(P.거래처코드, '')) AS supplierCode,
-        RTRIM(ISNULL(C.거래처명, '')) AS supplierName,
-        RTRIM(ISNULL(P.특이사항, '')) AS notes,
-        ISNULL(P.수정일, '') AS updatedAt,
-        ISNULL(S.whCode, ${isSpecificWh ? '@whCode' : "''"}) AS whCode,
-        ISNULL(S.whName, '') AS whName,
-        ISNULL(S.currentStock, 0) AS currentStock
-      FROM MT_TC_품목코드 P
-      LEFT JOIN MT_TC_거래처코드 C ON P.거래처코드 = C.거래처코드
-      ${isSpecificWh ? 'INNER JOIN StockCTE S ON S.itm_cd = P.품목코드' : 'LEFT JOIN StockCTE S ON S.itm_cd = P.품목코드'}
-      WHERE (@query = '' OR P.품목명 LIKE @likeQ OR P.품목코드 LIKE @likeQ OR P.규격 LIKE @likeQ OR P.구역코드 LIKE @likeQ OR C.거래처명 LIKE @likeQ)
-      ORDER BY S.currentStock DESC, P.수정일 DESC, P.품목코드 ASC
-    `;
-
-    const items = await mssqlAdapter.query(sql, { query, likeQ, whCode });
-
-    res.json({
-      success: true,
-      count: items.length,
-      data: items,
+    // 2. 캐시가 비어있고 MSSQL 연결 실패 시
+    return res.status(503).json({
+      success: false,
+      error: 'ERP MSSQL 데이터베이스에 연결할 수 없으며 캐시된 데이터가 없습니다.',
     });
   } catch (err: any) {
     console.error('[ERP Search Error]', err);
@@ -479,7 +452,8 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
   try {
     const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim().toUpperCase() : 'ALL';
-    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '150', 10), 1), 500);
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '60', 10), 1), 500);
+    const offset = Math.max(parseInt(req.query.offset as string || '0', 10), 0);
 
     const isConnected = await mssqlAdapter.connect();
     if (!isConnected) {
@@ -491,7 +465,7 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
 
     const likeQ = `%${query}%`;
     const sql = `
-      SELECT TOP (${limit})
+      SELECT
         RTRIM(H.po_no) AS poNo,
         CONVERT(VARCHAR(10), H.po_dt, 120) AS poDate,
         CONVERT(VARCHAR(10), ISNULL(D.dlv_dt, H.dlv_dt), 120) AS deliveryDate,
@@ -525,6 +499,7 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
          OR M.itm_nm LIKE @likeQ
          OR D.itm_dsc LIKE @likeQ)
       ORDER BY H.po_dt DESC, H.po_no DESC, D.po_sq ASC
+      OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY;
     `;
 
     const rawRows = await mssqlAdapter.query<any>(sql, { query, likeQ });
@@ -535,6 +510,8 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
     res.json({
       success: true,
       count: filteredRows.length,
+      hasMore: rawRows.length === limit,
+      offset,
       data: filteredRows,
     });
   } catch (err: any) {
@@ -601,6 +578,50 @@ router.post('/inbound/print', async (req: Request, res: Response) => {
   }
 });
 
+// Cached User Authentication Storage for Offline DB Fallback
+const CACHED_USERS_FILE = path.resolve(process.cwd(), 'server/data/cached_users.json');
+
+interface CachedUserRecord {
+  code: string;
+  name: string;
+  dept?: string;
+  role?: string;
+  isAdmin: boolean;
+  hidePrice?: boolean;
+  passwordHash?: string;
+  pdaPwd?: string;
+  lastLoginAt: string;
+}
+
+function loadCachedUsers(): Map<string, CachedUserRecord> {
+  const map = new Map<string, CachedUserRecord>();
+  try {
+    if (fs.existsSync(CACHED_USERS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(CACHED_USERS_FILE, 'utf-8'));
+      if (Array.isArray(data)) {
+        for (const u of data) {
+          if (u.code) map.set(u.code.toLowerCase(), u);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed reading cached users:', err);
+  }
+  return map;
+}
+
+function saveCachedUser(record: CachedUserRecord) {
+  try {
+    const map = loadCachedUsers();
+    map.set(record.code.toLowerCase(), record);
+    const dir = path.dirname(CACHED_USERS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(CACHED_USERS_FILE, JSON.stringify(Array.from(map.values()), null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed saving cached user:', err);
+  }
+}
+
 // POST /api/erp/auth/login - 사내 ERP 담당자코드 & 패스워드 로그인 인증
 router.post('/auth/login', async (req: Request, res: Response) => {
   try {
@@ -609,11 +630,15 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: '담당자코드를 입력해주세요.' });
     }
 
+    const cleanCode = code.trim();
+    const cleanPwd = typeof password === 'string' ? password.trim() : '';
+
     const isConnected = await mssqlAdapter.connect();
     if (!isConnected) {
-      if (code === 'admin' || code === 'demo') {
+      if (cleanCode.toLowerCase() === 'admin' || cleanCode.toLowerCase() === 'demo') {
         return res.json({
           success: true,
+          offlineMode: true,
           user: {
             code: 'admin',
             name: '개발자 (오프라인 모드)',
@@ -622,13 +647,56 @@ router.post('/auth/login', async (req: Request, res: Response) => {
             isAdmin: true,
             hidePrice: false,
           },
+          message: '오프라인 개발자 모드로 로그인되었습니다.',
         });
       }
-      return res.status(503).json({ success: false, message: '사내 ERP DB에 연결할 수 없습니다.' });
-    }
 
-    const cleanCode = code.trim();
-    const cleanPwd = typeof password === 'string' ? password.trim() : '';
+      // Check cached users from previous online logins
+      const cachedUsers = loadCachedUsers();
+      const cached = cachedUsers.get(cleanCode.toLowerCase());
+      if (cached) {
+        const sha256Input = crypto.createHash('sha256').update(cleanPwd).digest('hex').toLowerCase();
+        let isPasswordMatch = false;
+
+        if (!cached.passwordHash && !cached.pdaPwd) {
+          isPasswordMatch = true;
+        } else if (cached.passwordHash && sha256Input === cached.passwordHash.toLowerCase()) {
+          isPasswordMatch = true;
+        } else if (cached.pdaPwd && cleanPwd === cached.pdaPwd) {
+          isPasswordMatch = true;
+        } else if (cached.passwordHash && cleanPwd.toLowerCase() === cached.passwordHash.toLowerCase()) {
+          isPasswordMatch = true;
+        } else if (cleanPwd === '' && !cached.passwordHash) {
+          isPasswordMatch = true;
+        }
+
+        if (isPasswordMatch) {
+          return res.json({
+            success: true,
+            offlineMode: true,
+            user: {
+              code: cached.code,
+              name: cached.name,
+              dept: cached.dept,
+              role: cached.role,
+              isAdmin: cached.isAdmin,
+              hidePrice: cached.hidePrice,
+            },
+            message: `사내 ERP DB 오프라인 상태: 기존 인증 정보(${cached.name})로 로그인되었습니다.`,
+          });
+        } else {
+          return res.status(401).json({
+            success: false,
+            message: '비밀번호가 일치하지 않습니다. (오프라인 캐시 인증)',
+          });
+        }
+      }
+
+      return res.status(503).json({
+        success: false,
+        message: '사내 ERP DB에 연결할 수 없습니다. (오프라인 로그인을 위해 최소 1회 이상 로그인한 이력이 필요합니다)',
+      });
+    }
 
     // 1. Try scu100 table first (Younglimwon K-System standard user master)
     let userRow: any = null;
@@ -737,6 +805,19 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: '비밀번호가 일치하지 않습니다.' });
     }
 
+    // Save successful login credentials to local cached storage for offline execution
+    saveCachedUser({
+      code: userRow.code,
+      name: userRow.name,
+      dept: userRow.dept,
+      role: userRow.role,
+      isAdmin: userRow.isAdmin,
+      hidePrice: userRow.hidePrice,
+      passwordHash: dbHash || sha256Input,
+      pdaPwd: userRow.pda_pwd || cleanPwd,
+      lastLoginAt: new Date().toISOString(),
+    });
+
     return res.json({
       success: true,
       user: {
@@ -759,7 +840,20 @@ router.get('/auth/users', async (_req: Request, res: Response) => {
   try {
     const isConnected = await mssqlAdapter.connect();
     if (!isConnected) {
-      return res.json({ success: true, data: [] });
+      const cachedUsers = Array.from(loadCachedUsers().values());
+      return res.json({
+        success: true,
+        offline: true,
+        data: cachedUsers.map(r => ({
+          code: r.code,
+          name: r.name,
+          dept: r.dept || '자재',
+          role: r.role || (r.isAdmin ? '관리자' : '사원'),
+          isAdmin: Boolean(r.isAdmin),
+          hidePrice: Boolean(r.hidePrice),
+          hasPassword: Boolean(r.passwordHash || r.pdaPwd),
+        })),
+      });
     }
 
     // 1. Try scu100 first
@@ -823,6 +917,54 @@ router.get('/auth/users', async (_req: Request, res: Response) => {
       })),
     });
   } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/erp/sync-queue/batch - 오프라인 대기 큐 트랜잭션 일괄 동기화 처리
+router.post('/sync-queue/batch', async (req: Request, res: Response) => {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.json({ success: true, processed: 0, results: [] });
+    }
+
+    const isConnected = await mssqlAdapter.connect();
+    if (!isConnected) {
+      return res.status(503).json({
+        success: false,
+        error: '사내 ERP DB에 연결되어 있지 않아 일괄 동기화를 진행할 수 없습니다.',
+      });
+    }
+
+    const { processErpInboundReceive } = await import('../db/erpInboundDb');
+    const results: any[] = [];
+
+    for (const item of items) {
+      try {
+        if (item.type === 'INBOUND_RECEIVE') {
+          const r = await processErpInboundReceive(item.payload);
+          results.push({ id: item.id, slipNo: item.slipNo, success: true, message: r.message });
+        } else {
+          results.push({ id: item.id, slipNo: item.slipNo, success: true });
+        }
+      } catch (itemErr: any) {
+        results.push({ id: item.id, slipNo: item.slipNo, success: false, error: itemErr.message });
+      }
+    }
+
+    const succeeded = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+
+    res.json({
+      success: true,
+      processed: results.length,
+      succeeded,
+      failed,
+      results,
+    });
+  } catch (err: any) {
+    console.error('[Sync Queue Batch Error]', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

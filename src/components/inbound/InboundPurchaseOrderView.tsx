@@ -14,23 +14,31 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { ErpPurchaseOrder, fetchErpPurchaseOrders } from '../../api/erpApi';
+import { VirtualGrid } from '../common/VirtualScrollContainer';
+
+import { usePersistedState } from '../../hooks/usePersistedState';
 
 interface InboundPurchaseOrderViewProps {
   onShowToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export const InboundPurchaseOrderView: React.FC<InboundPurchaseOrderViewProps> = ({ onShowToast }) => {
+const InboundPurchaseOrderViewComponent: React.FC<InboundPurchaseOrderViewProps> = ({ onShowToast }) => {
   const [orders, setOrders] = useState<ErpPurchaseOrder[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'WAITING' | 'PARTIAL' | 'COMPLETED'>('ALL');
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
+  const [hasMore, setHasMore] = useState<boolean>(true);
+  const [searchTerm, setSearchTerm] = usePersistedState<string>('filter_po_search', '');
+  const [statusFilter, setStatusFilter] = usePersistedState<'ALL' | 'WAITING' | 'PARTIAL' | 'COMPLETED'>('filter_po_status', 'ALL');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const PAGE_SIZE = 60;
 
   const loadOrders = async (query: string = '') => {
     try {
       setIsLoading(true);
-      const data = await fetchErpPurchaseOrders(query, 'ALL', 200);
+      setHasMore(true);
+      const data = await fetchErpPurchaseOrders(query, 'ALL', PAGE_SIZE, 0);
       setOrders(data);
+      setHasMore(data.length >= PAGE_SIZE);
     } catch (err: any) {
       console.error('Failed to load purchase orders:', err);
       onShowToast(err.message || 'ERP 발주 내역을 불러오지 못했습니다.', 'error');
@@ -39,9 +47,42 @@ export const InboundPurchaseOrderView: React.FC<InboundPurchaseOrderViewProps> =
     }
   };
 
+  const handleLoadMore = async () => {
+    if (isLoading || isLoadingMore || !hasMore) return;
+    try {
+      setIsLoadingMore(true);
+      const nextOffset = orders.length;
+      const nextBatch = await fetchErpPurchaseOrders(searchTerm, 'ALL', PAGE_SIZE, nextOffset);
+      if (nextBatch && nextBatch.length > 0) {
+        setOrders((prev) => {
+          const existing = new Set(prev.map((p) => `${p.poNo}_${p.itemCode}`));
+          const newItems = nextBatch.filter((n) => !existing.has(`${n.poNo}_${n.itemCode}`));
+          return [...prev, ...newItems];
+        });
+        setHasMore(nextBatch.length >= PAGE_SIZE);
+      } else {
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.warn('PO load more error:', err);
+      setHasMore(false);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
   useEffect(() => {
-    loadOrders();
+    loadOrders(searchTerm);
   }, []);
+
+  // Listen to global top navbar refresh event
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      loadOrders(searchTerm);
+    };
+    window.addEventListener('app:refresh-data', handleGlobalRefresh);
+    return () => window.removeEventListener('app:refresh-data', handleGlobalRefresh);
+  }, [searchTerm]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -96,15 +137,6 @@ export const InboundPurchaseOrderView: React.FC<InboundPurchaseOrderViewProps> =
               <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
                 사내 ERP 발주 내역 실시간 조회
               </h1>
-              <button
-                type="button"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                title="사내 ERP 발주 내역 새로고침"
-                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-indigo-300 hover:text-white transition-all cursor-pointer border border-white/10 shrink-0"
-              >
-                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              </button>
             </div>
           </div>
         </div>
@@ -181,8 +213,14 @@ export const InboundPurchaseOrderView: React.FC<InboundPurchaseOrderViewProps> =
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-            {filteredOrders.map((order, idx) => {
+          <VirtualGrid<ErpPurchaseOrder>
+            items={filteredOrders}
+            itemHeight={250}
+            cols={{ sm: 2, md: 2, lg: 3, xl: 3 }}
+            onEndReached={handleLoadMore}
+            hasMore={hasMore}
+            isLoadingMore={isLoadingMore}
+            renderItem={(order, idx) => {
               const isCompleted = order.status === 'COMPLETED';
               const isPartial = order.status === 'PARTIAL';
               const isWaiting = order.status === 'WAITING';
@@ -312,11 +350,13 @@ export const InboundPurchaseOrderView: React.FC<InboundPurchaseOrderViewProps> =
                   </div>
                 </div>
               );
-            })}
-          </div>
+            }}
+          />
         )}
       </div>
 
     </div>
   );
 };
+
+export const InboundPurchaseOrderView = React.memo(InboundPurchaseOrderViewComponent);

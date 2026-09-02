@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Database,
   Search,
@@ -22,36 +22,55 @@ import {
   ErpWarehouse,
   fetchErpStatus,
   searchErpMaterials,
+  searchErpMaterialsWithTotal,
   syncErpMaterials,
   fetchErpMaterialDetail,
   fetchErpWarehouses
 } from '../../api/erpApi';
 import {
   saveMaterialsToIndexedDb,
-  searchMaterialsInIndexedDb
+  searchMaterialsInIndexedDb,
+  searchMaterialsInIndexedDbWithTotal,
+  getUniqueWarehousesFromIndexedDb,
+  getMaterialsCountInIndexedDb
 } from '../../utils/indexedDbHelper';
 import { registerBackHandler } from '../../utils/backHandler';
+import { VirtualGrid } from '../common/VirtualScrollContainer';
+
+import { usePersistedState } from '../../hooks/usePersistedState';
 
 interface ErpMaterialSearchViewProps {
   onShowToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ onShowToast }) => {
-  // State
+const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ onShowToast }) => {
+  // State with persistence across tab switches
   const [erpStatus, setErpStatus] = useState<ErpStatus | null>(null);
   const [warehouses, setWarehouses] = useState<ErpWarehouse[]>([]);
-  const [selectedWh, setSelectedWh] = useState<string>('ALL');
+  const [selectedWh, setSelectedWh] = usePersistedState<string>('filter_materials_wh', 'ALL');
   const [materials, setMaterials] = useState<ErpMaterial[]>([]);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [debouncedQuery, setDebouncedQuery] = useState<string>('');
+  const [totalCount, setTotalCount] = useState<number>(0);
+  const [searchTerm, setSearchTerm] = usePersistedState<string>('filter_materials_search', '');
+  const [debouncedQuery, setDebouncedQuery] = useState<string>(() => {
+    try {
+      const saved = sessionStorage.getItem('filter_materials_search');
+      return saved ? JSON.parse(saved) : '';
+    } catch {
+      return '';
+    }
+  });
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
+  const [hasMore, setHasMore] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const PAGE_SIZE = 60;
+  const searchSeqRef = useRef<number>(0);
 
   // Full Screen Detail View
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [detailData, setDetailData] = useState<ErpMaterialDetail | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState<boolean>(false);
-  const [subulFilter, setSubulFilter] = useState<'ALL' | 'IN' | 'OUT'>('ALL');
+  const [subulFilter, setSubulFilter] = usePersistedState<'ALL' | 'IN' | 'OUT'>('filter_materials_subul', 'ALL');
   
   // QR Label Print Modal
   const [qrPrintItem, setQrPrintItem] = useState<ErpMaterial | null>(null);
@@ -82,10 +101,26 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
     }
   }, [selectedCode, qrPrintItem]);
 
-  // Load Status and Warehouses on mount
+  // Load Status, Warehouses, and initial background warm-up on mount
   useEffect(() => {
     loadStatus();
     loadWarehouses();
+
+    const initWarmup = async () => {
+      try {
+        const count = await getMaterialsCountInIndexedDb().catch(() => 0);
+        if (count < 50) {
+          const res = await syncErpMaterials(undefined, 'ALL', 5000).catch(() => null);
+          if (res && res.data && res.data.length > 0) {
+            await saveMaterialsToIndexedDb(res.data).catch(() => {});
+            loadWarehouses();
+          }
+        }
+      } catch {
+        // silent
+      }
+    };
+    initWarmup();
   }, []);
 
   const loadStatus = async () => {
@@ -99,46 +134,140 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
 
   const loadWarehouses = async () => {
     try {
-      const whList = await fetchErpWarehouses();
-      setWarehouses(whList);
+      const serverWh = await fetchErpWarehouses().catch(() => []);
+      const localWh = await getUniqueWarehousesFromIndexedDb().catch(() => []);
+
+      const map = new Map<string, { code: string; name: string; itemCount?: number }>();
+      for (const w of serverWh) {
+        if (w.code && w.code !== 'ALL') {
+          map.set(w.code, { code: w.code, name: w.name || w.code, itemCount: w.itemCount });
+        }
+      }
+      for (const w of localWh) {
+        if (w.code && w.code !== 'ALL' && !map.has(w.code)) {
+          map.set(w.code, { code: w.code, name: w.name || w.code });
+        }
+      }
+
+      setWarehouses(Array.from(map.values()));
     } catch (err: any) {
       console.error('Failed to load warehouses:', err);
     }
   };
 
-  // Execute Search
-  const executeSearch = useCallback(async (query: string, whCode: string = selectedWh) => {
+  // API 및 인덱스DB 창고 정보로부터 고유 창고 목록 추출 (자재 목록 변경과 분리하여 불필요한 재계산 제거)
+  const dynamicWarehouses = useMemo(() => {
+    const map = new Map<string, { code: string; name: string; itemCount?: number }>();
+
+    for (const w of warehouses) {
+      if (w.code && w.code !== 'ALL') {
+        const code = String(w.code).trim();
+        const name = String(w.name || w.code).trim();
+        map.set(code, {
+          code,
+          name: name === code ? `${code} 창고` : name,
+          itemCount: w.itemCount,
+        });
+      }
+    }
+
+    const list = Array.from(map.values());
+    return list.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  }, [warehouses]);
+
+  // Execute Search (Local-First 즉시 표출 + 서버 초고속 동기화)
+  const executeSearch = useCallback(async (query: string, whCode: string) => {
+    const currentSeq = ++searchSeqRef.current;
+
+    // 1. FAST LOCAL-FIRST: 즉시 인덱스DB/인메모리 캐시에서 0.01초 만에 화면에 먼저 표출 (랙 완벽 차단)
+    try {
+      const local = await searchMaterialsInIndexedDbWithTotal(query, PAGE_SIZE, 0, whCode);
+      if (local && local.data.length > 0 && currentSeq === searchSeqRef.current) {
+        setMaterials(local.data);
+        setTotalCount(local.total);
+        setHasMore(local.data.length >= PAGE_SIZE);
+      }
+    } catch {
+      // 무시 (서버에서 최신 데이터 가져옴)
+    }
+
+    // 2. 서버 캐시 조회 및 최신화 (< 1ms 응답)
     try {
       setIsLoading(true);
-      const serverResults = await searchErpMaterials(query, whCode, 120);
-      setMaterials(serverResults);
+      const serverResults = await searchErpMaterialsWithTotal(query, whCode, PAGE_SIZE, 0);
+      if (currentSeq === searchSeqRef.current) {
+        setMaterials(serverResults.data);
+        setTotalCount(serverResults.total);
+        setHasMore(serverResults.hasMore);
 
-      if (whCode === 'ALL' && !query) {
-        saveMaterialsToIndexedDb(serverResults).catch(() => {});
+        if (serverResults.data.length > 0) {
+          saveMaterialsToIndexedDb(serverResults.data).catch(() => {});
+        }
       }
     } catch (err: any) {
-      console.warn('ERP search failed, fallback to IndexedDB:', err);
-      try {
-        const local = await searchMaterialsInIndexedDb(query, 120);
-        setMaterials(local);
-      } catch (localErr) {
-        setMaterials([]);
-      }
+      console.warn('ERP search failed, kept local data if available:', err);
     } finally {
-      setIsLoading(false);
+      if (currentSeq === searchSeqRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [selectedWh]);
+  }, []);
 
-  // Handle warehouse change
+  // Load more on scroll to bottom
+  const handleLoadMore = useCallback(async () => {
+    if (isLoading || isLoadingMore || !hasMore) return;
+    try {
+      setIsLoadingMore(true);
+      const nextOffset = materials.length;
+      let nextBatch: ErpMaterial[] = [];
+
+      try {
+        const res = await searchErpMaterialsWithTotal(searchTerm, selectedWh, PAGE_SIZE, nextOffset);
+        nextBatch = res.data;
+        if (res.total > 0) setTotalCount(res.total);
+      } catch {
+        const local = await searchMaterialsInIndexedDbWithTotal(searchTerm, PAGE_SIZE, nextOffset, selectedWh);
+        nextBatch = local.data;
+        if (local.total > 0) setTotalCount(local.total);
+      }
+
+      if (nextBatch && nextBatch.length > 0) {
+        setMaterials((prev) => {
+          const existing = new Set(prev.map((p) => `${p.code}_${p.whCode}`));
+          const newItems = nextBatch.filter((n) => !existing.has(`${n.code}_${n.whCode}`));
+          return [...prev, ...newItems];
+        });
+        setHasMore(nextBatch.length >= PAGE_SIZE);
+      } else {
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.warn('Load more failed:', err);
+      setHasMore(false);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoading, isLoadingMore, hasMore, materials.length, searchTerm, selectedWh]);
+
+  // Handle warehouse change (중복 호출 원천 제거 - useEffect에서 단일 실행)
   const handleSelectWarehouse = (whCode: string) => {
     setSelectedWh(whCode);
-    executeSearch(searchTerm, whCode);
   };
 
-  // Trigger search on query change or warehouse change
+  // Trigger search on query change or warehouse change (단일 진입점)
   useEffect(() => {
     executeSearch(debouncedQuery, selectedWh);
   }, [debouncedQuery, selectedWh, executeSearch]);
+
+  // Listen to global top navbar refresh event
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      executeSearch(searchTerm, selectedWh);
+      loadWarehouses();
+    };
+    window.addEventListener('app:refresh-data', handleGlobalRefresh);
+    return () => window.removeEventListener('app:refresh-data', handleGlobalRefresh);
+  }, [executeSearch, searchTerm, selectedWh]);
 
   // Handle manual sync refresh
   const handleRefresh = async () => {
@@ -628,15 +757,6 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
               <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
                 사내 ERP 자재 실시간 조회
               </h1>
-              <button
-                type="button"
-                onClick={handleRefresh}
-                disabled={isSyncing}
-                title="사내 ERP 자재 새로고침"
-                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-indigo-300 hover:text-white transition-all cursor-pointer border border-white/10 shrink-0"
-              >
-                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-              </button>
             </div>
           </div>
         </div>
@@ -657,7 +777,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
               className="w-full h-11 sm:h-12 pl-3.5 pr-8 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer"
             >
               <option value="ALL">🏢 전체 창고 (통합)</option>
-              {warehouses.filter(w => w.code !== 'ALL').map((wh) => (
+              {dynamicWarehouses.map((wh) => (
                 <option key={wh.code} value={wh.code}>
                   {wh.name} {wh.itemCount ? `(${wh.itemCount}종)` : ''}
                 </option>
@@ -695,7 +815,7 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
         <div className="flex items-center justify-between px-1">
           <h2 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
             <Boxes className="w-4 h-4 text-indigo-600" />
-            자재 목록 <span className="text-indigo-600 font-mono">({materials.length}건)</span>
+            자재 목록 <span className="text-indigo-600 font-mono">({totalCount > 0 ? `총 ${totalCount.toLocaleString()}건` : `${materials.length}건`}{totalCount > materials.length ? ` • ${materials.length}개 로드됨` : ''})</span>
           </h2>
           {isLoading && (
             <span className="text-xs text-indigo-600 flex items-center gap-1 font-semibold">
@@ -715,8 +835,14 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-            {materials.map((item, idx) => (
+          <VirtualGrid<ErpMaterial>
+            items={materials}
+            itemHeight={280}
+            cols={{ sm: 2, md: 2, lg: 3, xl: 4 }}
+            onEndReached={handleLoadMore}
+            hasMore={hasMore}
+            isLoadingMore={isLoadingMore}
+            renderItem={(item, idx) => (
               <div
                 key={`${item.code}_${item.whCode || idx}_${idx}`}
                 className="bg-white rounded-2xl border border-slate-200 p-4 hover:border-indigo-300 hover:shadow-md transition-all space-y-3 flex flex-col justify-between"
@@ -796,8 +922,8 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
                   </button>
                 </div>
               </div>
-            ))}
-          </div>
+            )}
+          />
         )}
       </div>
 
@@ -886,3 +1012,5 @@ export const ErpMaterialSearchView: React.FC<ErpMaterialSearchViewProps> = ({ on
     </div>
   );
 };
+
+export const ErpMaterialSearchView = React.memo(ErpMaterialSearchViewComponent);

@@ -3,7 +3,7 @@
  * QR코드 기반 실시간 납품확인서 검수 및 입고처리 (PC & Mobile PWA)
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   InboundSlip,
   InboundViewTab,
@@ -25,10 +25,24 @@ import { InboundPendingList } from './components/inbound/InboundPendingList';
 import { InboundHistoryView } from './components/inbound/InboundHistoryView';
 import { InboundSimulatorModal } from './components/inbound/InboundSimulatorModal';
 import { InboundSlipPrintModal } from './components/inbound/InboundSlipPrintModal';
+import { InboundSyncQueueModal } from './components/inbound/InboundSyncQueueModal';
 import { ErpMaterialSearchView } from './components/erp/ErpMaterialSearchView';
 import { InboundPurchaseOrderView } from './components/inbound/InboundPurchaseOrderView';
 import { InboundLoginModal } from './components/auth/InboundLoginModal';
+import { ScrollToTopButton } from './components/common/ScrollToTopButton';
+import { ServerConnectionModal } from './components/common/ServerConnectionModal';
 import { ErpUser } from './api/erpApi';
+import {
+  saveSlipsToIndexedDb,
+  getSlipsFromIndexedDb,
+  getSlipByNoFromIndexedDb,
+  getMaterialByCodeInIndexedDb,
+} from './utils/indexedDbHelper';
+import {
+  queueInboundReceive,
+  processSyncQueue,
+  getPendingQueueCount,
+} from './utils/syncQueueHelper';
 
 import {
   ClipboardCheck,
@@ -78,10 +92,12 @@ export default function App() {
     return localStorage.getItem('kcp_operator') || '홍길동 (자재과장)';
   });
 
-  // Modal States
-  const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  // Modals
+  const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [slipToPrint, setSlipToPrint] = useState<InboundSlip | null>(null);
+  const [isSyncQueueOpen, setIsSyncQueueOpen] = useState<boolean>(false);
+  const [isServerModalOpen, setIsServerModalOpen] = useState<boolean>(false);
 
   // Toast Notification
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -127,6 +143,15 @@ export default function App() {
       return true;
     });
   }, [isSimulatorOpen]);
+
+  // Register Back Handler for Sync Queue Modal (Priority 90)
+  useEffect(() => {
+    if (!isSyncQueueOpen) return;
+    return registerBackHandler('syncQueueModal', 90, () => {
+      setIsSyncQueueOpen(false);
+      return true;
+    });
+  }, [isSyncQueueOpen]);
 
   // Register Back Handler for Inspection Screen (Priority 50)
   useEffect(() => {
@@ -231,14 +256,14 @@ export default function App() {
     };
   }, [handleGlobalBack, showToast]);
 
-  // Load Slips, Stats and Warehouses from Backend (통합 ERP 실시간 미입고 & 입고내역 연동)
+  // Load Slips, Stats and Warehouses from Backend (통합 ERP 실시간 미입고 & 입고내역 연동 + IndexedDB 오프라인 캐시)
   const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true);
       const [fetchedLocal, fetchedErpPending, fetchedErpHistory, fetchedStats, fetchedWh] = await Promise.all([
         inboundApi.fetchInboundSlips().catch(() => []),
-        erpApi.fetchErpPendingSlips('', 100).catch(() => []),
-        erpApi.fetchErpInboundHistory(100).catch(() => []),
+        erpApi.fetchErpPendingSlips('', 200).catch(() => []),
+        erpApi.fetchErpInboundHistory(300).catch(() => []),
         inboundApi.fetchInboundStats().catch(() => null),
         inboundApi.fetchWarehouses().catch(() => []),
       ]);
@@ -250,20 +275,87 @@ export default function App() {
         }
       }
 
+      // If ERP data could not be fetched (offline), fallback to IndexedDB cached slips!
+      if (fetchedErpPending.length === 0 && fetchedErpHistory.length === 0) {
+        try {
+          const idbSlips = await getSlipsFromIndexedDb();
+          for (const s of idbSlips) {
+            if (!combined.some((c) => c.slipNo === s.slipNo)) {
+              combined.push(s);
+            }
+          }
+        } catch (idbErr) {
+          console.warn('Failed loading from IndexedDB slips cache:', idbErr);
+        }
+      } else {
+        // Save fetched slips to IndexedDB cache
+        saveSlipsToIndexedDb(combined).catch(() => {});
+      }
+
       setSlips(combined);
       if (fetchedStats) setStats(fetchedStats);
       if (fetchedWh && fetchedWh.length > 0) setWarehouses(fetchedWh);
     } catch (err: any) {
       console.warn('Failed fetching inbound data:', err);
-      showToast(err.message || '서버 데이터 조회에 실패했습니다.', 'error');
+      try {
+        const idbSlips = await getSlipsFromIndexedDb();
+        if (idbSlips.length > 0) {
+          setSlips(idbSlips);
+        }
+      } catch (e) {
+        // ignore
+      }
     } finally {
       setIsLoading(false);
     }
   }, []);
 
+  // 통합 새로고침 (상단바 버튼 클릭 시 전체 데이터 및 활성 탭 일괄 새로고침)
+  const handleRefreshData = useCallback(async () => {
+    try {
+      await loadInitialData();
+      window.dispatchEvent(new CustomEvent('app:refresh-data'));
+      showToast('데이터가 최신 상태로 새로고침되었습니다.', 'success');
+    } catch (err: any) {
+      showToast(err.message || '새로고침 실패', 'error');
+    }
+  }, [loadInitialData, showToast]);
+
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
+
+  // Auto-sync worker: triggers when network/DB recovers
+  useEffect(() => {
+    let timer: any = null;
+    const runAutoSync = async () => {
+      try {
+        const queueCount = await getPendingQueueCount();
+        if (queueCount > 0) {
+          const st = await erpApi.fetchErpStatus();
+          if (st?.isConnected) {
+            console.log('[AutoSync] ERP DB restored! Auto syncing pending tasks:', queueCount);
+            const res = await processSyncQueue();
+            if (res.succeeded > 0) {
+              showToast(`🔄 [자동 동기화] ${res.succeeded}건의 입고 작업이 사내 ERP에 반영되었습니다!`, 'success');
+              await loadInitialData();
+            }
+          }
+        }
+      } catch {
+        // ignore background poll errors
+      }
+    };
+
+    timer = setInterval(runAutoSync, 15000);
+    const onOnline = () => { runAutoSync(); };
+    window.addEventListener('online', onOnline);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [loadInitialData, showToast]);
 
   // Check URL query / hash for deep link
   useEffect(() => {
@@ -344,6 +436,18 @@ export default function App() {
           showToast(`사내 ERP 미입고 전표 [${erpSlip.slipNo}] 조회 완료! 실시간 입고 검수를 시작합니다.`, 'success');
           return;
         } catch (erpErr: any) {
+          // Fallback to IndexedDB cached slips (오프라인 모드)
+          try {
+            const cached = await getSlipByNoFromIndexedDb(result.slipNo);
+            if (cached) {
+              navigateToTab('RECEIVING', cached);
+              showToast(`캐시된 전표 [${cached.slipNo}] 조회 완료! (오프라인 모드)`, 'info');
+              return;
+            }
+          } catch (idbErr) {
+            console.warn('IDB lookup failed:', idbErr);
+          }
+
           soundHelper.playErrorBuzzer();
           showToast(`전표 [${result.slipNo}]를 로컬 및 사내 ERP에서 찾을 수 없습니다.`, 'error');
           return;
@@ -351,11 +455,57 @@ export default function App() {
       }
     }
 
+    // 3. If an Item Code is scanned, check local IndexedDB materials (인덱스DB)
+    if (result.itemCode) {
+      try {
+        const mat = await getMaterialByCodeInIndexedDb(result.itemCode);
+        if (mat) {
+          const nowStr = new Date().toISOString();
+          const adHocSlip: InboundSlip = {
+            slipNo: `INB-${mat.code}-${Date.now().toString().slice(-4)}`,
+            supplierCode: mat.supplierCode || 'SUP-LOCAL',
+            supplierName: mat.supplierName || '현장 입고',
+            poNumber: `PO-${mat.code}`,
+            deliveryDate: nowStr.slice(0, 10),
+            status: 'WAITING',
+            totalItems: 1,
+            totalOrderedQty: 1,
+            totalReceivedQty: 1,
+            totalDefectQty: 0,
+            manager: operator,
+            items: [{
+              id: `adhoc-${mat.code}-${Date.now()}`,
+              itemCode: mat.code,
+              itemName: mat.name,
+              spec: mat.spec || '',
+              unit: mat.unit || 'EA',
+              orderQty: 1,
+              receivedQty: 1,
+              defectQty: 0,
+              warehouse: mat.whName || '특장자재창고',
+              unitPrice: mat.unitPrice || 0,
+              status: 'WAITING',
+              barcode: mat.code,
+              notes: '인덱스DB 자재 현장 QR 스캔',
+            }],
+            createdAt: nowStr,
+            updatedAt: nowStr,
+          };
+          setActiveSlip(adHocSlip);
+          navigateToTab('RECEIVING', adHocSlip);
+          showToast(`인덱스DB 품목 [${mat.name}] 확인! 현장 입고 검수를 진행합니다.`, 'info');
+          return;
+        }
+      } catch (matErr) {
+        console.warn('Material scan lookup error:', matErr);
+      }
+    }
+
     showToast(`스캔된 코드 [${result.rawText}]에 해당하는 정보를 찾을 수 없습니다.`, 'error');
   };
 
   // Select Pending Slip to Inspect (supports direct ERP slip object)
-  const handleSelectPendingSlip = async (slipNo: string, directSlip?: InboundSlip) => {
+  const handleSelectPendingSlip = useCallback(async (slipNo: string, directSlip?: InboundSlip) => {
     if (directSlip) {
       navigateToTab('RECEIVING', directSlip);
       return;
@@ -369,12 +519,21 @@ export default function App() {
         const erpSlip = await erpApi.fetchErpSlipByNo(slipNo);
         navigateToTab('RECEIVING', erpSlip);
       } catch (err: any) {
+        // Check IndexedDB cached slips
+        try {
+          const cached = await getSlipByNoFromIndexedDb(slipNo);
+          if (cached) {
+            navigateToTab('RECEIVING', cached);
+            showToast(`오프라인 캐시 전표 [${cached.slipNo}]를 불러왔습니다.`, 'info');
+            return;
+          }
+        } catch { /* ignore */ }
         showToast(err.message || '전표 조회 실패', 'error');
       }
     }
-  };
+  }, [navigateToTab, showToast]);
 
-  // Confirm Inbound Receiving Transaction (supports real-time MSSQL MT_T_입출고 insert)
+  // Confirm Inbound Receiving Transaction (supports real-time MSSQL insert + offline queue fallback)
   const handleConfirmReceiving = async (payload: InboundReceivePayload) => {
     try {
       const isErpSlip = activeSlip?.supplierCode?.startsWith('SUP-ERP') ||
@@ -390,11 +549,20 @@ export default function App() {
       let resultSlip: InboundSlip;
 
       if (isErpSlip) {
-        // Real-time ERP MSSQL Inbound Receive
-        const erpRes = await erpApi.processErpInboundReceive(receivePayload);
-        soundHelper.playSuccessChime();
-        showToast(erpRes.message || '사내 ERP(MSSQL) 입고 처리가 완료되었습니다!', 'success');
-        resultSlip = erpRes.slip;
+        // Attempt real-time ERP MSSQL Inbound Receive
+        try {
+          const erpRes = await erpApi.processErpInboundReceive(receivePayload);
+          soundHelper.playSuccessChime();
+          showToast(erpRes.message || '사내 ERP(MSSQL) 입고 처리가 완료되었습니다!', 'success');
+          resultSlip = erpRes.slip;
+        } catch (erpErr: any) {
+          console.warn('[Offline Fallback] Real-time ERP receive failed, queueing transaction:', erpErr);
+          // Queue offline transaction
+          const { localSlip } = await queueInboundReceive(receivePayload, managerName, activeSlip || undefined);
+          soundHelper.playSuccessChime();
+          showToast('📴 오프라인 입고 확정: 로컬에 저장되었으며 동기화 대기 큐에 등록되었습니다. (DB 복구 시 자동 동기화)', 'info');
+          resultSlip = localSlip;
+        }
       } else {
         // Standard Local Inbound Receive
         const localRes = await inboundApi.processInboundReceive(receivePayload);
@@ -425,12 +593,16 @@ export default function App() {
   };
 
   // Open Print Modal (if opened from History)
-  const handleOpenPrintModal = (slip: InboundSlip) => {
+  const handleOpenPrintModal = useCallback((slip: InboundSlip) => {
     setSlipToPrint(slip);
     setIsPrintModalOpen(true);
-  };
+  }, []);
 
-  const pendingCount = slips.filter((s) => s.status === 'WAITING' || s.status === 'INSPECTING').length;
+  const pendingSlips = useMemo(() => {
+    return slips.filter((s) => s.status === 'WAITING' || s.status === 'INSPECTING' || s.status === 'HOLD');
+  }, [slips]);
+
+  const pendingCount = pendingSlips.length;
 
   if (!currentUser) {
     return (
@@ -493,18 +665,23 @@ export default function App() {
         onChangeOperator={handleOperatorChange}
         currentUser={currentUser}
         onLogout={handleLogout}
-        onRefreshData={loadInitialData}
+        onRefreshData={handleRefreshData}
+        onOpenSyncQueue={() => setIsSyncQueueOpen(true)}
+        onOpenServerConfig={() => setIsServerModalOpen(true)}
       />
 
       {/* Main Workspace Body */}
       <main className="flex-1 pb-32 md:pb-8 w-full max-w-full">
-        {currentTab === 'SCANNER' && (
+        <div
+          style={currentTab === 'SCANNER' || currentTab === 'PENDING' ? undefined : { display: 'none', contain: 'content' }}
+          className={currentTab === 'SCANNER' || currentTab === 'PENDING' ? 'block' : 'hidden'}
+        >
           <InboundScanner
             onScanSuccess={handleScanSuccess}
-            pendingSlips={slips.filter((s) => s.status === 'WAITING' || s.status === 'INSPECTING')}
+            pendingSlips={pendingSlips}
             onSelectPendingSlip={handleSelectPendingSlip}
           />
-        )}
+        </div>
 
         {currentTab === 'RECEIVING' && activeSlip && (
           <InboundReceivingView
@@ -517,30 +694,31 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'PENDING' && (
-          <InboundScanner
-            onScanSuccess={handleScanSuccess}
-            pendingSlips={slips.filter((s) => s.status === 'WAITING' || s.status === 'INSPECTING')}
-            onSelectPendingSlip={handleSelectPendingSlip}
-          />
-        )}
-
-        {currentTab === 'HISTORY' && (
+        <div
+          style={currentTab === 'HISTORY' ? undefined : { display: 'none', contain: 'content' }}
+          className={currentTab === 'HISTORY' ? 'block' : 'hidden'}
+        >
           <InboundHistoryView
             slips={slips}
             onOpenPrintModal={handleOpenPrintModal}
             onSelectSlip={handleSelectPendingSlip}
             onRefresh={loadInitialData}
           />
-        )}
+        </div>
 
-        {currentTab === 'PURCHASE_ORDERS' && (
+        <div
+          style={currentTab === 'PURCHASE_ORDERS' ? undefined : { display: 'none', contain: 'content' }}
+          className={currentTab === 'PURCHASE_ORDERS' ? 'block' : 'hidden'}
+        >
           <InboundPurchaseOrderView onShowToast={showToast} />
-        )}
+        </div>
 
-        {currentTab === 'ERP_SEARCH' && (
+        <div
+          style={currentTab === 'ERP_SEARCH' ? undefined : { display: 'none', contain: 'content' }}
+          className={currentTab === 'ERP_SEARCH' ? 'block' : 'hidden'}
+        >
           <ErpMaterialSearchView onShowToast={showToast} />
-        )}
+        </div>
       </main>
 
       {/* Mobile Bottom Navigation Bar with Safe Area Inset Support */}
@@ -598,11 +776,36 @@ export default function App() {
         </button>
       </div>
 
+      {/* Floating Scroll-to-Top Action Button */}
+      <ScrollToTopButton />
+
       {/* Printable Inbound Receipt Modal (for History tab) */}
       <InboundSlipPrintModal
         isOpen={isPrintModalOpen}
         onClose={() => setIsPrintModalOpen(false)}
         slip={slipToPrint}
+      />
+
+      {/* Offline Sync Queue Modal */}
+      <InboundSyncQueueModal
+        isOpen={isSyncQueueOpen}
+        onClose={() => setIsSyncQueueOpen(false)}
+        onShowToast={showToast}
+      />
+
+      {/* Server Connection & Mode Selection Modal */}
+      <ServerConnectionModal
+        isOpen={isServerModalOpen}
+        onClose={() => setIsServerModalOpen(false)}
+        onSelectOfflineMode={() => {
+          setIsServerModalOpen(false);
+          showToast('오프라인 작업 모드로 설정되었습니다.', 'info');
+        }}
+        onReconnectSuccess={() => {
+          setIsServerModalOpen(false);
+          handleRefreshData();
+          showToast('서버에 성공적으로 재접속되었습니다.', 'success');
+        }}
       />
 
     </div>

@@ -19,10 +19,12 @@ import {
   Eye,
   Upload,
   ZoomIn,
-  Database
+  Database,
+  CloudUpload
 } from 'lucide-react';
 import { InboundSlip, InboundItem, InboundReceivePayload } from '../../types/inbound';
 import { soundHelper } from '../../utils/soundHelper';
+import { fetchErpStatus } from '../../api/erpApi';
 
 interface InboundReceivingViewProps {
   slip: InboundSlip;
@@ -106,9 +108,16 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
   const [selectedDefectItem, setSelectedDefectItem] = useState<InboundItem | null>(null);
   const [defectQtyInput, setDefectQtyInput] = useState<number>(0);
   const [defectReasonInput, setDefectReasonInput] = useState<string>('');
+  const [isErpOnline, setIsErpOnline] = useState<boolean>(true);
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchErpStatus()
+      .then((st) => setIsErpOnline(Boolean(st?.isConnected)))
+      .catch(() => setIsErpOnline(false));
+  }, []);
 
   useEffect(() => {
     setItems(slip.items || []);
@@ -265,7 +274,7 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
 
       await onConfirmReceiving(payload);
     } catch (err: any) {
-      alert(`입고 처리 실패: ${err.message}`);
+      console.error('Inbound confirm error:', err);
     } finally {
       setIsSubmitting(false);
     }
@@ -286,10 +295,17 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
         </button>
 
         {(slip.supplierCode?.startsWith('SUP-ERP') || slip.slipNo.length === 11 || !slip.slipNo.startsWith('DN-')) && (
-          <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold shadow-2xs">
-            <Database className="w-3.5 h-3.5 text-emerald-600" />
-            <span>ERP(MSSQL) 실시간 입고 모드</span>
-          </span>
+          isErpOnline ? (
+            <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold shadow-2xs">
+              <Database className="w-3.5 h-3.5 text-emerald-600" />
+              <span>ERP(MSSQL) 실시간 입고 모드</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold shadow-2xs">
+              <CloudUpload className="w-3.5 h-3.5 text-amber-600" />
+              <span>오프라인 입고 (대기 큐 등록)</span>
+            </span>
+          )
         )}
       </div>
 
@@ -551,16 +567,28 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
           </button>
         )}
 
+        {/* Offline Notice Banner */}
+        {!isErpOnline && (
+          <div className="flex items-center gap-2 p-2.5 bg-amber-50/90 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>현재 사내 DB 미연결 상태입니다. 입고 확정 시 로컬에 저장되며 동기화 대기 큐에 등록됩니다.</span>
+          </div>
+        )}
+
         {/* Inbound Confirm - Full Width Button */}
         <button
           type="button"
           disabled={isSubmitting}
           onClick={() => handleSubmitReceiving(true)}
-          className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white text-sm font-bold rounded-xl transition-all shadow-sm flex items-center justify-center space-x-2 cursor-pointer"
+          className={`w-full py-3 text-white text-sm font-bold rounded-xl transition-all shadow-sm flex items-center justify-center space-x-2 cursor-pointer ${
+            isErpOnline
+              ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99]'
+              : 'bg-amber-600 hover:bg-amber-700 active:scale-[0.99]'
+          }`}
         >
-          <PackageCheck className="w-4 h-4" />
+          {isErpOnline ? <PackageCheck className="w-4 h-4" /> : <CloudUpload className="w-4 h-4" />}
           <span>
-            {isSubmitting ? '입고 처리중...' : '입고 확정'}
+            {isSubmitting ? '입고 처리중...' : isErpOnline ? '입고 확정' : '오프라인 입고 확정 (대기 큐 적재)'}
           </span>
         </button>
 

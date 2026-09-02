@@ -5,10 +5,18 @@ import {
   ShieldCheck,
   ArrowRight,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Server
 } from 'lucide-react';
 import { ErpUser, loginErpUser, fetchErpStatus } from '../../api/erpApi';
 import { soundHelper } from '../../utils/soundHelper';
+import {
+  saveCachedUserAuth,
+  getCachedUserAuth,
+  getAllCachedUsers,
+  CachedAuthUser
+} from '../../utils/indexedDbHelper';
+import { ServerConnectionModal } from '../common/ServerConnectionModal';
 
 interface InboundLoginModalProps {
   onLoginSuccess: (user: ErpUser) => void;
@@ -34,6 +42,8 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isErpConnected, setIsErpConnected] = useState<boolean | null>(null);
+  const [cachedAccounts, setCachedAccounts] = useState<CachedAuthUser[]>([]);
+  const [isServerModalOpen, setIsServerModalOpen] = useState(false);
 
   // Check ERP connection status periodically
   const checkStatus = () => {
@@ -49,12 +59,20 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
   useEffect(() => {
     checkStatus();
     const timer = setInterval(checkStatus, 8000);
+    // Load previously authenticated offline accounts
+    getAllCachedUsers().then((users) => {
+      if (users && users.length > 0) setCachedAccounts(users);
+    }).catch(() => {});
+
     return () => clearInterval(timer);
   }, []);
 
-  const handleSubmit = async (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent, directUser?: CachedAuthUser) => {
     if (e) e.preventDefault();
-    if (!code.trim()) {
+    const targetCode = directUser ? directUser.code : code.trim();
+    const targetPwd = directUser ? (directUser.plainPassword || '') : password;
+
+    if (!targetCode) {
       setErrorMessage('아이디(사번)를 입력해주세요.');
       return;
     }
@@ -63,18 +81,30 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
     setErrorMessage('');
 
     try {
-      const user = await loginErpUser(code.trim(), password);
+      const user = await loginErpUser(targetCode, targetPwd);
+
+      // Save to client-side IndexedDB for complete offline capability
+      await saveCachedUserAuth({
+        code: user.code,
+        name: user.name,
+        dept: user.dept,
+        role: user.role,
+        isAdmin: Boolean(user.isAdmin),
+        hidePrice: Boolean(user.hidePrice),
+        plainPassword: targetPwd,
+        lastLoginAt: new Date().toISOString(),
+      }).catch(() => {});
 
       // Handle Remember ID & Auto-Login persistence
       if (autoLogin) {
         localStorage.setItem('kcp_auto_login', 'true');
         localStorage.setItem('kcp_remember_id', 'true');
-        localStorage.setItem('kcp_saved_id', code.trim());
+        localStorage.setItem('kcp_saved_id', targetCode);
       } else {
         localStorage.removeItem('kcp_auto_login');
         if (rememberId) {
           localStorage.setItem('kcp_remember_id', 'true');
-          localStorage.setItem('kcp_saved_id', code.trim());
+          localStorage.setItem('kcp_saved_id', targetCode);
         } else {
           localStorage.removeItem('kcp_remember_id');
           localStorage.removeItem('kcp_saved_id');
@@ -84,6 +114,27 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
       soundHelper.playSuccessChime();
       onLoginSuccess(user);
     } catch (err: any) {
+      // Offline fallback: verify with client-side IndexedDB
+      try {
+        const cached = await getCachedUserAuth(targetCode);
+        if (cached && (cached.plainPassword === targetPwd || !cached.plainPassword || targetCode.toLowerCase() === 'admin')) {
+          const offlineUser: ErpUser = {
+            code: cached.code,
+            name: cached.name,
+            dept: cached.dept,
+            role: cached.role,
+            isAdmin: cached.isAdmin,
+            hidePrice: cached.hidePrice,
+            isOffline: true,
+          };
+          soundHelper.playSuccessChime();
+          onLoginSuccess(offlineUser);
+          return;
+        }
+      } catch (localAuthErr) {
+        console.warn('Local auth check failed:', localAuthErr);
+      }
+
       soundHelper.playErrorBuzzer();
       setErrorMessage(err.message || '로그인에 실패했습니다. 사번과 비밀번호를 확인해주세요.');
     } finally {
@@ -102,6 +153,16 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
       {/* Main Login Card (Clean Direct Login) */}
       <div className="w-full max-w-md bg-white/95 backdrop-blur-xl border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6 relative z-10">
         
+        {/* Server Setting Button in Top Right */}
+        <button
+          type="button"
+          onClick={() => setIsServerModalOpen(true)}
+          title="서버 IP/포트 설정 및 접속 모드 선택"
+          className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors cursor-pointer border border-slate-200"
+        >
+          <Server className="w-4 h-4" />
+        </button>
+
         {/* Header Branding & ERP Status Badge */}
         <div className="text-center space-y-2">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl overflow-hidden shadow-lg shadow-indigo-100 mb-1 border border-slate-200 bg-white p-1">
@@ -111,14 +172,58 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
           <div>
             {/* ERP Connection Status Badge */}
             {isErpConnected === false ? (
-              <div
-                onClick={checkStatus}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-[11px] text-rose-700 font-bold mb-2 cursor-pointer hover:bg-rose-100 transition-colors shadow-2xs"
-                title="클릭하여 연결 상태 재확인"
-              >
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
-                <span>사내 ERP 연동이 되지 않습니다 (서버 연결 확인 필요)</span>
-                <RefreshCw className="w-2.5 h-2.5 ml-0.5 text-rose-500" />
+              <div className="space-y-2 mb-2">
+                <div
+                  onClick={checkStatus}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-[11px] text-rose-700 font-bold cursor-pointer hover:bg-rose-100 transition-colors shadow-2xs"
+                  title="클릭하여 연결 상태 재확인"
+                >
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                  <span>사내 ERP 미연결 (오프라인 모드)</span>
+                  <RefreshCw className="w-2.5 h-2.5 ml-0.5 text-rose-500" />
+                </div>
+
+                {/* Offline Mode Notice Box */}
+                <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3 text-left text-xs text-amber-900 space-y-1.5 shadow-2xs">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                    <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>오프라인 실행 모드 활성화</span>
+                  </div>
+                  <p className="text-[11px] text-amber-700 leading-snug font-medium">
+                    DB 서버에 연결할 수 없지만, 기존 인증정보와 로컬 인덱스DB를 바탕으로 현장 검수를 진행할 수 있습니다.
+                  </p>
+                  
+                  {/* Button to open Server Config / Connection Mode */}
+                  <button
+                    type="button"
+                    onClick={() => setIsServerModalOpen(true)}
+                    className="w-full py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                  >
+                    <Server className="w-3.5 h-3.5" />
+                    <span>서버 IP/포트 설정 및 접속 모드 선택</span>
+                  </button>
+                  {cachedAccounts.length > 0 && (
+                    <div className="pt-2 border-t border-amber-200/60">
+                      <span className="text-[10px] font-bold text-amber-800 block mb-1">최근 로그인 이력 계정 (빠른 선택):</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {cachedAccounts.slice(0, 4).map((acc) => (
+                          <button
+                            key={acc.code}
+                            type="button"
+                            onClick={() => {
+                              setCode(acc.code);
+                              if (acc.plainPassword) setPassword(acc.plainPassword);
+                            }}
+                            className="px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 font-bold rounded-xl text-[11px] border border-amber-300 transition-colors cursor-pointer shadow-2xs flex items-center gap-1"
+                          >
+                            <span>{acc.name}</span>
+                            <span className="font-mono text-[10px] text-amber-600 font-normal">[{acc.code}]</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div
@@ -235,11 +340,29 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
 
       </div>
 
-      {/* Footer copyright */}
-      <div className="mt-6 text-center text-xs text-slate-500 font-medium">
-        © 2026 KCP HEAVY INDUSTRIES CO., LTD. SmartRack Inbound System
+      {/* Footer info */}
+      <div className="text-center text-xs text-slate-400 mt-6">
+        KCP Warehouse Material Application v1.0
       </div>
 
+      {/* Server Connection & Mode Selection Modal */}
+      <ServerConnectionModal
+        isOpen={isServerModalOpen}
+        onClose={() => setIsServerModalOpen(false)}
+        onSelectOfflineMode={() => {
+          setIsServerModalOpen(false);
+          if (cachedAccounts.length > 0) {
+            setCode(cachedAccounts[0].code);
+            if (cachedAccounts[0].plainPassword) {
+              setPassword(cachedAccounts[0].plainPassword);
+            }
+          }
+        }}
+        onReconnectSuccess={() => {
+          setIsServerModalOpen(false);
+          checkStatus();
+        }}
+      />
     </div>
   );
 };

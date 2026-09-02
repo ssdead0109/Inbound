@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   History,
   Search,
@@ -32,16 +32,52 @@ interface InboundHistoryViewProps {
   onRefresh?: () => void;
 }
 
-export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
+import { usePersistedState } from '../../hooks/usePersistedState';
+
+const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
   slips,
   onOpenPrintModal,
   onSelectSlip,
   onRefresh,
 }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'COMPLETED' | 'PARTIAL'>('ALL');
-  const [viewMode, setViewMode] = useState<'BY_SLIP' | 'BY_ITEM'>('BY_SLIP');
+  const [searchTerm, setSearchTerm] = usePersistedState<string>('filter_history_search', '');
+  const [statusFilter, setStatusFilter] = usePersistedState<'ALL' | 'COMPLETED' | 'PARTIAL'>('filter_history_status', 'ALL');
+  const [viewMode, setViewMode] = usePersistedState<'BY_SLIP' | 'BY_ITEM'>('filter_history_view_mode', 'BY_SLIP');
   const [collapsedSlips, setCollapsedSlips] = useState<Record<string, boolean>>({});
+  const [displayLimit, setDisplayLimit] = useState(50);
+  const historySentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setDisplayLimit(50);
+  }, [searchTerm, statusFilter, viewMode]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0] && entries[0].isIntersecting) {
+          setDisplayLimit((prev) => prev + 30);
+        }
+      },
+      { rootMargin: '600px 0px', threshold: 0.01 }
+    );
+
+    if (historySentinelRef.current) {
+      observer.observe(historySentinelRef.current);
+    }
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollBottom = window.innerHeight + window.scrollY;
+      const threshold = document.documentElement.scrollHeight - 700;
+      if (scrollBottom >= threshold) {
+        setDisplayLimit((prev) => prev + 30);
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // Lightbox Photo Viewer State
   const [photoViewer, setPhotoViewer] = useState<{
@@ -154,16 +190,6 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
                 <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
                   입고 완료 내역
                 </h1>
-                {onRefresh && (
-                  <button
-                    type="button"
-                    onClick={onRefresh}
-                    title="사내 ERP 입고내역 새로고침"
-                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-indigo-300 hover:text-white transition-all cursor-pointer border border-white/10 shrink-0"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </button>
-                )}
               </div>
             </div>
           </div>
@@ -253,10 +279,10 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
         </div>
       )}
 
-      {/* 1. BY_SLIP: Clean Multi-Row Card Header */}
+      {/* 1. BY_SLIP: Progressive Infinite Stream */}
       {viewMode === 'BY_SLIP' && (
         <div className="space-y-3">
-          {filteredSlips.map((slip) => {
+          {filteredSlips.slice(0, displayLimit).map((slip) => {
             const isCompleted = slip.status === 'COMPLETED';
             const hasDefects = (slip.totalDefectQty || 0) > 0;
             const isCollapsed = collapsedSlips[slip.slipNo] || false;
@@ -469,10 +495,10 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
         </div>
       )}
 
-      {/* 2. BY_ITEM: Flat Stream of All Items Across Slips */}
+      {/* 2. BY_ITEM: Progressive Infinite Stream */}
       {viewMode === 'BY_ITEM' && (
         <div className="space-y-2.5">
-          {flattenedItems.map((item, idx) => {
+          {flattenedItems.slice(0, displayLimit * 2).map((item, idx) => {
             const itemMatch = item.receivedQty >= item.orderQty && item.defectQty === 0;
             const itemDefect = item.defectQty > 0;
             const hasPhotos = item.photos && item.photos.length > 0;
@@ -546,6 +572,17 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Infinite Scroll Sentinel & Indicator */}
+      <div ref={historySentinelRef} className="h-6 w-full" aria-hidden="true" />
+
+      {((viewMode === 'BY_SLIP' && displayLimit < filteredSlips.length) ||
+        (viewMode === 'BY_ITEM' && displayLimit * 2 < flattenedItems.length)) && (
+        <div className="py-6 flex items-center justify-center gap-2 text-xs font-bold text-indigo-600 animate-pulse">
+          <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+          <span>스크롤하여 추가 내역 불러오는 중...</span>
         </div>
       )}
 
@@ -657,3 +694,5 @@ export const InboundHistoryView: React.FC<InboundHistoryViewProps> = ({
     </div>
   );
 };
+
+export const InboundHistoryView = React.memo(InboundHistoryViewComponent);

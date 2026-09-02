@@ -31,7 +31,7 @@ interface InboundScannerProps {
   onSelectPendingSlip: (slipNo: string) => void;
 }
 
-export const InboundScanner: React.FC<InboundScannerProps> = ({
+const InboundScannerComponent: React.FC<InboundScannerProps> = ({
   onScanSuccess,
   pendingSlips,
   onSelectPendingSlip,
@@ -416,10 +416,34 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
               <Boxes className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-slate-700 font-bold text-sm">입고 대기 중인 전표가 없습니다</p>
-              <p className="text-slate-400 text-xs mt-0.5">
-                사내 ERP '미입고현황'에서 대기 중인 발주 내역이 없거나 필터 조건에 맞는 전표가 없습니다.
-              </p>
+              {selectedWarehouse !== 'ALL' && pendingSlips.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-slate-700 font-bold text-sm">
+                    '{selectedWarehouse}' 창고에 대기 중인 전표가 없습니다
+                  </p>
+                  <p className="text-slate-500 text-xs">
+                    다른 창고에 총 <span className="font-bold text-indigo-600 font-mono">{pendingSlips.length}건</span>의 대기 전표가 있습니다.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedWarehouse('ALL');
+                      localStorage.setItem('kcp_inbound_selected_wh', 'ALL');
+                    }}
+                    className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 transition-all cursor-pointer shadow-2xs"
+                  >
+                    <Warehouse className="w-3.5 h-3.5" />
+                    <span>전체 창고 전표 보기</span>
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-slate-700 font-bold text-sm">입고 대기 중인 전표가 없습니다</p>
+                  <p className="text-slate-400 text-xs mt-0.5">
+                    사내 ERP '미입고현황' 또는 '발주원장'에서 대기 중인 발주 내역이 없습니다.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -429,3 +453,5 @@ export const InboundScanner: React.FC<InboundScannerProps> = ({
     </div>
   );
 };
+
+export const InboundScanner = React.memo(InboundScannerComponent);

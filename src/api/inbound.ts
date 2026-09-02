@@ -1,6 +1,10 @@
 import { InboundSlip, InboundReceivePayload, InboundStats } from '../types/inbound';
+import { getServerBaseUrl } from '../utils/serverConfig';
 
-const API_BASE = '/api/inbound';
+// 동적 API Base URL
+const API_BASE = {
+  toString: () => `${getServerBaseUrl()}/api/inbound`,
+};
 
 export async function fetchWarehouses(): Promise<string[]> {
   const res = await fetch(`${API_BASE}/warehouses`);

@@ -19,11 +19,11 @@ export interface MssqlConfig {
 }
 
 export const DEFAULT_MSSQL_CONFIG: MssqlConfig = {
-  server: process.env.MSSQL_SERVER || '127.0.0.1',
-  port: parseInt(process.env.MSSQL_PORT || '1433', 10),
-  user: process.env.MSSQL_USER || '',
-  password: process.env.MSSQL_PASSWORD || '',
-  database: process.env.MSSQL_DATABASE || '',
+  server: (process.env.MSSQL_SERVER || '192.168.2.209').replace(/^["']|["']$/g, ''),
+  port: parseInt(process.env.MSSQL_PORT || '6611', 10),
+  user: (process.env.MSSQL_USER || 'sa').replace(/^["']|["']$/g, ''),
+  password: (process.env.MSSQL_PASSWORD || 'kcpdb16605#').replace(/^["']|["']$/g, ''),
+  database: (process.env.MSSQL_DATABASE || 'System9').replace(/^["']|["']$/g, ''),
   options: {
     encrypt: process.env.MSSQL_ENCRYPT === 'true',
     trustServerCertificate: true,
@@ -34,16 +34,26 @@ export class MssqlAdapter {
   private pool: sql.ConnectionPool | null = null;
   private isConnected = false;
   private config: MssqlConfig;
+  private lastConnectAttemptTime = 0;
+  private lastConnectFailed = false;
+  private readonly FAIL_COOLDOWN_MS = 6000;
 
   constructor(config: MssqlConfig = DEFAULT_MSSQL_CONFIG) {
     this.config = config;
   }
 
-  public async connect(): Promise<boolean> {
+  public async connect(force = false): Promise<boolean> {
     try {
       if (this.pool && this.isConnected) {
         return true;
       }
+
+      const now = Date.now();
+      if (!force && this.lastConnectFailed && (now - this.lastConnectAttemptTime < this.FAIL_COOLDOWN_MS)) {
+        return false;
+      }
+      this.lastConnectAttemptTime = now;
+
       console.log(`[MSSQL] Connecting to ${this.config.server}:${this.config.port}/${this.config.database} (User: ${this.config.user})...`);
       
       const sqlConfig: sql.config = {
@@ -56,8 +66,8 @@ export class MssqlAdapter {
           encrypt: this.config.options?.encrypt ?? false,
           trustServerCertificate: this.config.options?.trustServerCertificate ?? true,
         },
-        connectionTimeout: 5000,
-        requestTimeout: 15000,
+        connectionTimeout: 3000,
+        requestTimeout: 10000,
         pool: {
           max: 10,
           min: 0,
@@ -67,11 +77,13 @@ export class MssqlAdapter {
 
       this.pool = await new sql.ConnectionPool(sqlConfig).connect();
       this.isConnected = true;
+      this.lastConnectFailed = false;
       console.log(`[MSSQL] ✅ Connected successfully to ${this.config.database}!`);
       return true;
     } catch (err: any) {
       console.error(`[MSSQL] ❌ Connection failed:`, err.message);
       this.isConnected = false;
+      this.lastConnectFailed = true;
       this.pool = null;
       return false;
     }

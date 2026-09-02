@@ -1,6 +1,7 @@
 import { mssqlAdapter } from './mssqlAdapter';
 import { InboundSlip, InboundItem, InboundReceivePayload } from '../types/inbound';
 import { getItemByCode, updateItem, createItem, createLog } from '../db';
+import { upsertInboundSlips, getAllInboundSlips, getInboundSlipByNo } from './inboundDb';
 import { StockLog } from '../types';
 
 export interface ErpPendingRow {
@@ -35,178 +36,380 @@ export interface ErpPendingRow {
 }
 
 /**
- * 사내 ERP MSSQL '미입고현황' 테이블에서 미입고 전표 목록 조회 (전표 단위로 그룹화)
+ * 사내 ERP MSSQL '미입고현황' 및 'MMB100+MMB150'에서 미입고 전표 목록 조회 (2단계 폴백 & 오프라인 캐시 보존)
  */
 export async function getErpPendingSlips(query?: string, limit: number = 50): Promise<InboundSlip[]> {
   const isConnected = await mssqlAdapter.connect();
   if (!isConnected) {
-    throw new Error('ERP MSSQL 서버에 연결할 수 없습니다.');
+    // 오프라인 폴백: 로컬 디스크 캐시에서 대기 전표 반환
+    const cached = getAllInboundSlips({ query });
+    return cached.filter((s) => s.status === 'WAITING' || s.status === 'INSPECTING' || s.status === 'HOLD');
   }
 
   const likeQ = query ? `%${query.trim()}%` : '%';
-  const sql = `
-    SELECT TOP (${limit * 5})
-      RTRIM(ISNULL(slip_no, '')) AS slip_no,
-      ISNULL(po_seq, 1) AS po_seq,
-      RTRIM(ISNULL(거래처코드, '')) AS 거래처코드,
-      RTRIM(ISNULL(거래처명, '')) AS 거래처명,
-      RTRIM(ISNULL(품목코드, '')) AS 품목코드,
-      RTRIM(ISNULL(품목명, '')) AS 품목명,
-      RTRIM(ISNULL(규격명, '')) AS 규격명,
-      ISNULL(PO_QTY, '0') AS PO_QTY,
-      ISNULL(JAN_QTY, 0) AS JAN_QTY,
-      ISNULL(단가, 0) AS 단가,
-      ISNULL(금액, 0) AS 금액,
-      RTRIM(ISNULL(창고코드, '001')) AS 창고코드,
-      RTRIM(ISNULL(창고명, '화성공장')) AS 창고명,
-      RTRIM(ISNULL(납기일자, '')) AS 납기일자,
-      RTRIM(ISNULL(담당자명, '')) AS 담당자명,
-      RTRIM(ISNULL(적요, '')) AS 적요,
-      RTRIM(ISNULL(비고1, '')) AS 비고1,
-      RTRIM(ISNULL(비고2, '')) AS 비고2
-    FROM 미입고현황
-    WHERE (@query = '' OR slip_no LIKE @likeQ OR 거래처명 LIKE @likeQ OR 품목명 LIKE @likeQ OR 품목코드 LIKE @likeQ OR 창고명 LIKE @likeQ)
-    ORDER BY slip_no DESC, po_seq ASC
-  `;
+  let slips: InboundSlip[] = [];
 
-  const rows = await mssqlAdapter.query<ErpPendingRow>(sql, {
-    query: query || '',
-    likeQ,
-  });
+  // 1단계: '미입고현황' 테이블 조회
+  try {
+    const sql1 = `
+      SELECT TOP (${limit * 5})
+        RTRIM(ISNULL(slip_no, '')) AS slip_no,
+        ISNULL(po_seq, 1) AS po_seq,
+        RTRIM(ISNULL(거래처코드, '')) AS 거래처코드,
+        RTRIM(ISNULL(거래처명, '')) AS 거래처명,
+        RTRIM(ISNULL(품목코드, '')) AS 품목코드,
+        RTRIM(ISNULL(품목명, '')) AS 품목명,
+        RTRIM(ISNULL(규격명, '')) AS 규격명,
+        ISNULL(PO_QTY, '0') AS PO_QTY,
+        ISNULL(JAN_QTY, 0) AS JAN_QTY,
+        ISNULL(단가, 0) AS 단가,
+        ISNULL(금액, 0) AS 금액,
+        RTRIM(ISNULL(창고코드, '001')) AS 창고코드,
+        RTRIM(ISNULL(창고명, '화성공장')) AS 창고명,
+        RTRIM(ISNULL(납기일자, '')) AS 납기일자,
+        RTRIM(ISNULL(담당자명, '')) AS 담당자명,
+        RTRIM(ISNULL(적요, '')) AS 적요,
+        RTRIM(ISNULL(비고1, '')) AS 비고1,
+        RTRIM(ISNULL(비고2, '')) AS 비고2
+      FROM 미입고현황
+      WHERE (@query = '' OR slip_no LIKE @likeQ OR 거래처명 LIKE @likeQ OR 품목명 LIKE @likeQ OR 품목코드 LIKE @likeQ OR 창고명 LIKE @likeQ)
+      ORDER BY slip_no DESC, po_seq ASC
+    `;
 
-  // Group by slip_no
-  const slipMap = new Map<string, InboundSlip>();
+    const rows = await mssqlAdapter.query<ErpPendingRow>(sql1, {
+      query: query || '',
+      likeQ,
+    });
 
-  for (const row of rows) {
-    if (!row.slip_no) continue;
-    const slipNo = row.slip_no;
+    if (rows && rows.length > 0) {
+      const slipMap = new Map<string, InboundSlip>();
 
-    if (!slipMap.has(slipNo)) {
-      slipMap.set(slipNo, {
-        slipNo,
-        supplierCode: row.거래처코드 || 'SUP-ERP',
-        supplierName: row.거래처명 || 'ERP 등록 거래처',
-        poNumber: slipNo,
-        deliveryDate: row.납기일자 ? `20${row.납기일자.replace(/\//g, '-')}` : new Date().toISOString().substring(0, 10),
-        status: 'WAITING',
-        totalItems: 0,
-        totalOrderedQty: 0,
-        totalReceivedQty: 0,
-        totalDefectQty: 0,
-        manager: row.담당자명 || '자재담당',
-        memo: [row.적요, row.비고1, row.비고2].filter(Boolean).join(' | '),
-        items: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+      for (const row of rows) {
+        if (!row.slip_no) continue;
+        const slipNo = row.slip_no;
+
+        if (!slipMap.has(slipNo)) {
+          slipMap.set(slipNo, {
+            slipNo,
+            supplierCode: row.거래처코드 || 'SUP-ERP',
+            supplierName: row.거래처명 || 'ERP 등록 거래처',
+            poNumber: slipNo,
+            deliveryDate: row.납기일자 ? `20${row.납기일자.replace(/\//g, '-')}` : new Date().toISOString().substring(0, 10),
+            status: 'WAITING',
+            totalItems: 0,
+            totalOrderedQty: 0,
+            totalReceivedQty: 0,
+            totalDefectQty: 0,
+            manager: row.담당자명 || '자재담당',
+            memo: [row.적요, row.비고1, row.비고2].filter(Boolean).join(' | '),
+            items: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        const slip = slipMap.get(slipNo)!;
+        const poQty = Number(row.PO_QTY) || Number(row.JAN_QTY) || 1;
+        const janQty = Number(row.JAN_QTY) || poQty;
+
+        const item: InboundItem = {
+          id: `erp-item-${slipNo}-${row.po_seq}`,
+          itemCode: row.품목코드 || `MAT-${row.po_seq}`,
+          itemName: row.품목명 || '미상 품목',
+          spec: row.규격명 || '',
+          unit: 'EA',
+          orderQty: poQty,
+          receivedQty: janQty,
+          defectQty: 0,
+          warehouse: row.창고명 || '특장자재창고',
+          unitPrice: row.단가 || 0,
+          status: 'WAITING',
+          barcode: `${row.품목코드 || slipNo}-${janQty}`,
+          notes: row.비고1 || '',
+        };
+
+        slip.items.push(item);
+        slip.totalItems++;
+        slip.totalOrderedQty += poQty;
+      }
+
+      slips = Array.from(slipMap.values()).slice(0, limit);
     }
-
-    const slip = slipMap.get(slipNo)!;
-    const poQty = Number(row.PO_QTY) || Number(row.JAN_QTY) || 1;
-    const janQty = Number(row.JAN_QTY) || poQty;
-
-    const item: InboundItem = {
-      id: `erp-item-${slipNo}-${row.po_seq}`,
-      itemCode: row.품목코드 || `MAT-${row.po_seq}`,
-      itemName: row.품목명 || '미상 품목',
-      spec: row.규격명 || '',
-      unit: 'EA',
-      orderQty: poQty,
-      receivedQty: janQty, // Default expected receiving qty is remaining qty
-      defectQty: 0,
-      warehouse: row.창고명 || '특장자재창고',
-      unitPrice: row.단가 || 0,
-      status: 'WAITING',
-      barcode: `${row.품목코드 || slipNo}-${janQty}`,
-      notes: row.비고1 || '',
-    };
-
-    slip.items.push(item);
-    slip.totalItems++;
-    slip.totalOrderedQty += poQty;
+  } catch (e) {
+    console.warn('[ERP Pending] 미입고현황 테이블 조회 실패, MMB100/150 발주 원장으로 자동 대체:', e);
   }
 
-  return Array.from(slipMap.values()).slice(0, limit);
+  // 2단계 폴백: 영림원 공식 발주 테이블 MMB100 + MMB150 (미입고 잔량 > 0)
+  if (slips.length === 0) {
+    try {
+      const sql2 = `
+        SELECT TOP (${limit * 5})
+          RTRIM(H.po_no) AS poNo,
+          CONVERT(VARCHAR(10), H.po_dt, 120) AS poDate,
+          CONVERT(VARCHAR(10), ISNULL(D.dlv_dt, H.dlv_dt), 120) AS deliveryDate,
+          RTRIM(H.cust_cd) AS supplierCode,
+          RTRIM(ISNULL(V.cust_nm, H.cust_cd)) AS supplierName,
+          RTRIM(ISNULL(W.wh_nm, '특장자재창고')) AS warehouseName,
+          RTRIM(ISNULL(M.itm_cd, '')) AS itemCode,
+          RTRIM(ISNULL(M.itm_nm, ISNULL(D.itm_dsc, ''))) AS itemName,
+          RTRIM(ISNULL(M.spec, ISNULL(D.spec_dsc, ''))) AS itemSpec,
+          RTRIM(ISNULL(M.um_bc, 'EA')) AS unit,
+          ISNULL(D.po_qty, 0) AS poQty,
+          ISNULL(D.in_qty, 0) AS inQty,
+          (ISNULL(D.po_qty, 0) - ISNULL(D.in_qty, 0)) AS remainQty,
+          ISNULL(D.po_up, 0) AS unitPrice,
+          RTRIM(ISNULL(D.rmks, ISNULL(H.rmks, ''))) AS remarks,
+          ISNULL(D.po_seq, 1) AS poSeq
+        FROM MMB100 H
+        INNER JOIN MMB150 D ON D.po_no = H.po_no
+        LEFT JOIN DMA100 M ON M.itm_id = D.itm_id
+        LEFT JOIN BCV100 V ON V.cust_cd = H.cust_cd
+        LEFT JOIN BCW100 W ON W.wh_cd = ISNULL(D.in_wh, H.in_wh)
+        WHERE (ISNULL(D.po_qty, 0) - ISNULL(D.in_qty, 0)) > 0
+          AND (@query = '' OR H.po_no LIKE @likeQ OR V.cust_nm LIKE @likeQ OR M.itm_cd LIKE @likeQ OR M.itm_nm LIKE @likeQ)
+        ORDER BY H.po_no DESC, D.po_seq ASC
+      `;
+
+      const poRows = await mssqlAdapter.query<any>(sql2, { query: query || '', likeQ });
+      if (poRows && poRows.length > 0) {
+        const poMap = new Map<string, InboundSlip>();
+
+        for (const row of poRows) {
+          const poNo = row.poNo;
+          if (!poNo) continue;
+
+          if (!poMap.has(poNo)) {
+            poMap.set(poNo, {
+              slipNo: poNo,
+              supplierCode: row.supplierCode || 'SUP-ERP',
+              supplierName: row.supplierName || 'ERP 등록 거래처',
+              poNumber: poNo,
+              deliveryDate: row.deliveryDate || new Date().toISOString().substring(0, 10),
+              status: row.inQty > 0 ? 'INSPECTING' : 'WAITING',
+              totalItems: 0,
+              totalOrderedQty: 0,
+              totalReceivedQty: row.inQty || 0,
+              totalDefectQty: 0,
+              manager: '자재담당',
+              memo: row.remarks || '',
+              items: [],
+              createdAt: row.poDate || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+
+          const slip = poMap.get(poNo)!;
+          const poQty = Number(row.poQty) || 1;
+          const remainQty = Number(row.remainQty) || poQty;
+
+          slip.items.push({
+            id: `erp-po-item-${poNo}-${row.poSeq}`,
+            itemCode: row.itemCode || `MAT-${row.poSeq}`,
+            itemName: row.itemName || '미상 품목',
+            spec: row.itemSpec || '',
+            unit: row.unit || 'EA',
+            orderQty: poQty,
+            receivedQty: remainQty,
+            defectQty: 0,
+            warehouse: row.warehouseName || '특장자재창고',
+            unitPrice: Number(row.unitPrice) || 0,
+            status: 'WAITING',
+            barcode: `${row.itemCode || poNo}-${remainQty}`,
+            notes: row.remarks || '',
+          });
+
+          slip.totalItems++;
+          slip.totalOrderedQty += poQty;
+        }
+
+        slips = Array.from(poMap.values()).slice(0, limit);
+      }
+    } catch (e2) {
+      console.warn('[ERP Pending] MMB100/150 발주 테이블 조회 실패:', e2);
+    }
+  }
+
+  // 3단계: 조회된 전표가 있으면 로컬 디스크 캐시에 영구 보존
+  if (slips.length > 0) {
+    upsertInboundSlips(slips);
+    return slips;
+  }
+
+  // 4단계: DB에 전표가 없으면 로컬 캐시에서 반환
+  const diskCached = getAllInboundSlips({ query });
+  return diskCached.filter((s) => s.status === 'WAITING' || s.status === 'INSPECTING' || s.status === 'HOLD');
 }
 
 /**
  * 전표번호로 사내 ERP 단건 미입고 전표 조회 (QR 스캔 시 실시간 매칭)
  */
 export async function getErpSlipByNo(slipNo: string): Promise<InboundSlip | null> {
+  const cleanNo = (slipNo || '').trim();
+  if (!cleanNo) return null;
+
   const isConnected = await mssqlAdapter.connect();
-  if (!isConnected) return null;
-
-  const cleanNo = slipNo.trim();
-  const sql = `
-    SELECT
-      RTRIM(ISNULL(slip_no, '')) AS slip_no,
-      ISNULL(po_seq, 1) AS po_seq,
-      RTRIM(ISNULL(거래처코드, '')) AS 거래처코드,
-      RTRIM(ISNULL(거래처명, '')) AS 거래처명,
-      RTRIM(ISNULL(품목코드, '')) AS 품목코드,
-      RTRIM(ISNULL(품목명, '')) AS 품목명,
-      RTRIM(ISNULL(규격명, '')) AS 규격명,
-      ISNULL(PO_QTY, '0') AS PO_QTY,
-      ISNULL(JAN_QTY, 0) AS JAN_QTY,
-      ISNULL(단가, 0) AS 단가,
-      ISNULL(금액, 0) AS 금액,
-      RTRIM(ISNULL(창고코드, '001')) AS 창고코드,
-      RTRIM(ISNULL(창고명, '화성공장')) AS 창고명,
-      RTRIM(ISNULL(납기일자, '')) AS 납기일자,
-      RTRIM(ISNULL(담당자명, '')) AS 담당자명,
-      RTRIM(ISNULL(적요, '')) AS 적요,
-      RTRIM(ISNULL(비고1, '')) AS 비고1,
-      RTRIM(ISNULL(비고2, '')) AS 비고2
-    FROM 미입고현황
-    WHERE slip_no = @cleanNo OR slip_no LIKE '%' + @cleanNo + '%'
-    ORDER BY po_seq ASC
-  `;
-
-  const rows = await mssqlAdapter.query<ErpPendingRow>(sql, { cleanNo });
-  if (rows.length === 0) return null;
-
-  const first = rows[0];
-  const slip: InboundSlip = {
-    slipNo: first.slip_no,
-    supplierCode: first.거래처코드 || 'SUP-ERP',
-    supplierName: first.거래처명 || '사내 ERP 거래처',
-    poNumber: first.slip_no,
-    deliveryDate: first.납기일자 ? `20${first.납기일자.replace(/\//g, '-')}` : new Date().toISOString().substring(0, 10),
-    status: 'WAITING',
-    totalItems: rows.length,
-    totalOrderedQty: 0,
-    totalReceivedQty: 0,
-    totalDefectQty: 0,
-    manager: first.담당자명 || '자재과',
-    memo: [first.적요, first.비고1, first.비고2].filter(Boolean).join(' | '),
-    items: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  for (const row of rows) {
-    const poQty = Number(row.PO_QTY) || Number(row.JAN_QTY) || 1;
-    const janQty = Number(row.JAN_QTY) || poQty;
-
-    slip.items.push({
-      id: `erp-item-${first.slip_no}-${row.po_seq}`,
-      itemCode: row.품목코드,
-      itemName: row.품목명,
-      spec: row.규격명 || '',
-      unit: 'EA',
-      orderQty: poQty,
-      receivedQty: janQty,
-      defectQty: 0,
-      warehouse: row.창고명 || '특장자재창고',
-      unitPrice: row.단가 || 0,
-      status: 'WAITING',
-      barcode: `${row.품목코드}-${janQty}`,
-      notes: row.비고1 || '',
-    });
-    slip.totalOrderedQty += poQty;
+  if (!isConnected) {
+    return getInboundSlipByNo(cleanNo) || null;
   }
 
-  return slip;
+  // 1. 미입고현황에서 단건 조회
+  try {
+    const sql = `
+      SELECT
+        RTRIM(ISNULL(slip_no, '')) AS slip_no,
+        ISNULL(po_seq, 1) AS po_seq,
+        RTRIM(ISNULL(거래처코드, '')) AS 거래처코드,
+        RTRIM(ISNULL(거래처명, '')) AS 거래처명,
+        RTRIM(ISNULL(품목코드, '')) AS 품목코드,
+        RTRIM(ISNULL(품목명, '')) AS 품목명,
+        RTRIM(ISNULL(규격명, '')) AS 규격명,
+        ISNULL(PO_QTY, '0') AS PO_QTY,
+        ISNULL(JAN_QTY, 0) AS JAN_QTY,
+        ISNULL(단가, 0) AS 단가,
+        ISNULL(금액, 0) AS 금액,
+        RTRIM(ISNULL(창고코드, '001')) AS 창고코드,
+        RTRIM(ISNULL(창고명, '화성공장')) AS 창고명,
+        RTRIM(ISNULL(납기일자, '')) AS 납기일자,
+        RTRIM(ISNULL(담당자명, '')) AS 담당자명,
+        RTRIM(ISNULL(적요, '')) AS 적요,
+        RTRIM(ISNULL(비고1, '')) AS 비고1,
+        RTRIM(ISNULL(비고2, '')) AS 비고2
+      FROM 미입고현황
+      WHERE slip_no = @cleanNo OR slip_no LIKE '%' + @cleanNo + '%'
+      ORDER BY po_seq ASC
+    `;
+
+    const rows = await mssqlAdapter.query<ErpPendingRow>(sql, { cleanNo });
+    if (rows && rows.length > 0) {
+      const first = rows[0];
+      const slip: InboundSlip = {
+        slipNo: first.slip_no,
+        supplierCode: first.거래처코드 || 'SUP-ERP',
+        supplierName: first.거래처명 || '사내 ERP 거래처',
+        poNumber: first.slip_no,
+        deliveryDate: first.납기일자 ? `20${first.납기일자.replace(/\//g, '-')}` : new Date().toISOString().substring(0, 10),
+        status: 'WAITING',
+        totalItems: rows.length,
+        totalOrderedQty: 0,
+        totalReceivedQty: 0,
+        totalDefectQty: 0,
+        manager: first.담당자명 || '자재과',
+        memo: [first.적요, first.비고1, first.비고2].filter(Boolean).join(' | '),
+        items: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      for (const row of rows) {
+        const poQty = Number(row.PO_QTY) || Number(row.JAN_QTY) || 1;
+        const janQty = Number(row.JAN_QTY) || poQty;
+
+        slip.items.push({
+          id: `erp-item-${first.slip_no}-${row.po_seq}`,
+          itemCode: row.품목코드,
+          itemName: row.품목명,
+          spec: row.규격명 || '',
+          unit: 'EA',
+          orderQty: poQty,
+          receivedQty: janQty,
+          defectQty: 0,
+          warehouse: row.창고명 || '특장자재창고',
+          unitPrice: row.단가 || 0,
+          status: 'WAITING',
+          barcode: `${row.품목코드 || first.slip_no}-${janQty}`,
+          notes: row.비고1 || '',
+        });
+
+        slip.totalOrderedQty += poQty;
+      }
+
+      return slip;
+    }
+  } catch (e) {
+    console.warn('[ERP SlipByNo] 미입고현황 단건 조회 실패:', e);
+  }
+
+  // 2. MMB100 + MMB150에서 단건 조회
+  try {
+    const poSql = `
+      SELECT
+        RTRIM(H.po_no) AS poNo,
+        CONVERT(VARCHAR(10), H.po_dt, 120) AS poDate,
+        CONVERT(VARCHAR(10), ISNULL(D.dlv_dt, H.dlv_dt), 120) AS deliveryDate,
+        RTRIM(H.cust_cd) AS supplierCode,
+        RTRIM(ISNULL(V.cust_nm, H.cust_cd)) AS supplierName,
+        RTRIM(ISNULL(W.wh_nm, '특장자재창고')) AS warehouseName,
+        RTRIM(ISNULL(M.itm_cd, '')) AS itemCode,
+        RTRIM(ISNULL(M.itm_nm, ISNULL(D.itm_dsc, ''))) AS itemName,
+        RTRIM(ISNULL(M.spec, ISNULL(D.spec_dsc, ''))) AS itemSpec,
+        RTRIM(ISNULL(M.um_bc, 'EA')) AS unit,
+        ISNULL(D.po_qty, 0) AS poQty,
+        ISNULL(D.in_qty, 0) AS inQty,
+        (ISNULL(D.po_qty, 0) - ISNULL(D.in_qty, 0)) AS remainQty,
+        ISNULL(D.po_up, 0) AS unitPrice,
+        RTRIM(ISNULL(D.rmks, ISNULL(H.rmks, ''))) AS remarks,
+        ISNULL(D.po_seq, 1) AS poSeq
+      FROM MMB100 H
+      INNER JOIN MMB150 D ON D.po_no = H.po_no
+      LEFT JOIN DMA100 M ON M.itm_id = D.itm_id
+      LEFT JOIN BCV100 V ON V.cust_cd = H.cust_cd
+      LEFT JOIN BCW100 W ON W.wh_cd = ISNULL(D.in_wh, H.in_wh)
+      WHERE H.po_no = @cleanNo
+      ORDER BY D.po_seq ASC
+    `;
+
+    const poRows = await mssqlAdapter.query<any>(poSql, { cleanNo });
+    if (poRows && poRows.length > 0) {
+      const first = poRows[0];
+      const slip: InboundSlip = {
+        slipNo: first.poNo,
+        supplierCode: first.supplierCode || 'SUP-ERP',
+        supplierName: first.supplierName || 'ERP 등록 거래처',
+        poNumber: first.poNo,
+        deliveryDate: first.deliveryDate || new Date().toISOString().substring(0, 10),
+        status: first.inQty > 0 ? 'INSPECTING' : 'WAITING',
+        totalItems: poRows.length,
+        totalOrderedQty: 0,
+        totalReceivedQty: 0,
+        totalDefectQty: 0,
+        manager: '자재담당',
+        memo: first.remarks || '',
+        items: [],
+        createdAt: first.poDate || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      for (const row of poRows) {
+        const poQty = Number(row.poQty) || 1;
+        const remainQty = Number(row.remainQty) || poQty;
+
+        slip.items.push({
+          id: `erp-po-item-${first.poNo}-${row.poSeq}`,
+          itemCode: row.itemCode || `MAT-${row.poSeq}`,
+          itemName: row.itemName || '미상 품목',
+          spec: row.itemSpec || '',
+          unit: row.unit || 'EA',
+          orderQty: poQty,
+          receivedQty: remainQty,
+          defectQty: 0,
+          warehouse: row.warehouseName || '특장자재창고',
+          unitPrice: Number(row.unitPrice) || 0,
+          status: 'WAITING',
+          barcode: `${row.itemCode || first.poNo}-${remainQty}`,
+          notes: row.remarks || '',
+        });
+
+        slip.totalOrderedQty += poQty;
+      }
+
+      return slip;
+    }
+  } catch (e2) {
+    console.warn('[ERP SlipByNo] MMB100/150 단건 조회 실패:', e2);
+  }
+
+  // 3. 로컬 디스크 캐시 확인
+  return getInboundSlipByNo(cleanNo) || null;
 }
 
 /**

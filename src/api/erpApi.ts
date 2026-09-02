@@ -1,5 +1,6 @@
 import { InboundSlip, InboundReceivePayload } from '../types/inbound';
 import { StockLog } from '../types/inventory';
+import { getServerBaseUrl } from '../utils/serverConfig';
 
 export interface ErpStatus {
   isConnected: boolean;
@@ -75,9 +76,13 @@ export interface ErpUser {
   isAdmin?: boolean;
   hidePrice?: boolean;
   hasPassword?: boolean;
+  isOffline?: boolean;
 }
 
-const API_BASE = '/api/erp';
+// 동적 API Base URL (사용자 설정 서버 IP/포트 또는 기본 베이스 URL)
+const API_BASE = {
+  toString: () => `${getServerBaseUrl()}/api/erp`,
+};
 
 export interface ErpSyncResult {
   success: boolean;
@@ -115,16 +120,35 @@ export async function syncErpMaterials(since?: string, whCode: string = 'ALL', l
   return json;
 }
 
-export async function searchErpMaterials(query: string = '', whCode: string = 'ALL', limit: number = 60): Promise<ErpMaterial[]> {
+export async function searchErpMaterials(
+  query: string = '',
+  whCode: string = 'ALL',
+  limit: number = 60,
+  offset: number = 0
+): Promise<ErpMaterial[]> {
+  const result = await searchErpMaterialsWithTotal(query, whCode, limit, offset);
+  return result.data;
+}
+
+export async function searchErpMaterialsWithTotal(
+  query: string = '',
+  whCode: string = 'ALL',
+  limit: number = 60,
+  offset: number = 0
+): Promise<{ data: ErpMaterial[]; total: number; hasMore: boolean }> {
   const params = new URLSearchParams();
   if (query) params.set('query', query);
   if (whCode) params.set('whCode', whCode);
   params.set('limit', limit.toString());
+  if (offset > 0) params.set('offset', offset.toString());
 
   const res = await fetch(`${API_BASE}/materials?${params.toString()}`);
   if (!res.ok) throw new Error('ERP 자재 검색 실패');
   const json = await res.json();
-  return json.data || [];
+  const data = json.data || [];
+  const total = typeof json.total === 'number' ? json.total : data.length;
+  const hasMore = Boolean(json.hasMore ?? (offset + limit < total));
+  return { data, total, hasMore };
 }
 
 export async function fetchErpMaterialDetail(code: string): Promise<ErpMaterialDetail> {
@@ -246,7 +270,33 @@ export async function loginErpUser(code: string, password?: string): Promise<Erp
   if (!res.ok || !json.success) {
     throw new Error(json.message || '로그인에 실패했습니다.');
   }
-  return json.user;
+  const user: ErpUser = {
+    ...json.user,
+    isOffline: Boolean(json.offlineMode),
+  };
+  return user;
+}
+
+/**
+ * 오프라인 대기 큐 일괄 동기화 실행
+ */
+export async function syncQueueBatch(items: any[]): Promise<{
+  success: boolean;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  results: any[];
+}> {
+  const res = await fetch(`${API_BASE}/sync-queue/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || json.message || '대기 큐 일괄 동기화 실패');
+  }
+  return json;
 }
 
 /**
@@ -298,13 +348,16 @@ export interface ErpPurchaseOrder {
 export async function fetchErpPurchaseOrders(
   query: string = '',
   status: string = 'ALL',
-  limit: number = 150
+  limit: number = 60,
+  offset: number = 0
 ): Promise<ErpPurchaseOrder[]> {
   const params = new URLSearchParams({
     query,
     status,
     limit: limit.toString(),
   });
+  if (offset > 0) params.set('offset', offset.toString());
+
   const res = await fetch(`${API_BASE}/purchase-orders?${params.toString()}`);
   if (!res.ok) throw new Error('ERP 발주 내역 조회 실패');
   const json = await res.json();

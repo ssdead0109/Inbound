@@ -45,6 +45,26 @@ export function saveInboundToDisk(): void {
   }
 }
 
+/**
+ * ERP 또는 외부에서 조회된 전표를 로컬 캐시 및 디스크에 병합 보존
+ */
+export function upsertInboundSlips(slips: InboundSlip[]): void {
+  if (!slips || slips.length === 0) return;
+  const map = new Map<string, InboundSlip>();
+  for (const s of inboundCache) {
+    if (s && s.slipNo) map.set(s.slipNo, s);
+  }
+  for (const s of slips) {
+    if (s && s.slipNo) {
+      if (!map.has(s.slipNo)) {
+        map.set(s.slipNo, s);
+      }
+    }
+  }
+  inboundCache = Array.from(map.values());
+  saveInboundToDisk();
+}
+
 // Inbound Slip Queries
 export function getAllInboundSlips(filter?: {
   status?: string;

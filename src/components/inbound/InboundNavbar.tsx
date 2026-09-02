@@ -6,11 +6,14 @@ import {
   User,
   Database,
   LogOut,
-  RefreshCw
+  RefreshCw,
+  Server
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { InboundViewTab } from '../../types/inbound';
-import { ErpUser } from '../../api/erpApi';
+import { ErpUser, fetchErpStatus } from '../../api/erpApi';
+import { CloudUpload } from 'lucide-react';
+import { getPendingQueueCount, subscribeToQueueChanges, isQueueSyncing } from '../../utils/syncQueueHelper';
 
 interface InboundNavbarProps {
   currentTab: InboundViewTab;
@@ -21,6 +24,9 @@ interface InboundNavbarProps {
   currentUser?: ErpUser | null;
   onLogout?: () => void;
   onRefreshData?: () => void;
+  onOpenSyncQueue?: () => void;
+  onOpenServerConfig?: () => void;
+  isErpOnline?: boolean;
 }
 
 export const InboundNavbar: React.FC<InboundNavbarProps> = ({
@@ -32,11 +38,41 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
   currentUser,
   onLogout,
   onRefreshData,
+  onOpenSyncQueue,
+  onOpenServerConfig,
+  isErpOnline: externalIsOnline,
 }) => {
   const [isEditingOperator, setIsEditingOperator] = useState(false);
   const [customOpInput, setCustomOpInput] = useState(operator);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [queueCount, setQueueCount] = useState<number>(0);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isErpOnline, setIsErpOnline] = useState<boolean>(externalIsOnline ?? true);
   const isNativeApp = Capacitor.isNativePlatform();
+
+  // Load and subscribe to queue count & syncing state
+  useEffect(() => {
+    getPendingQueueCount().then(setQueueCount);
+    setIsSyncing(isQueueSyncing());
+    return subscribeToQueueChanges(() => {
+      getPendingQueueCount().then(setQueueCount);
+      setIsSyncing(isQueueSyncing());
+    });
+  }, []);
+
+  // Periodically check ERP DB status
+  useEffect(() => {
+    if (externalIsOnline !== undefined) {
+      setIsErpOnline(externalIsOnline);
+      return;
+    }
+    const check = () => {
+      fetchErpStatus().then(st => setIsErpOnline(Boolean(st?.isConnected))).catch(() => setIsErpOnline(false));
+    };
+    check();
+    const t = setInterval(check, 10000);
+    return () => clearInterval(t);
+  }, [externalIsOnline]);
 
   // Dynamically update --app-header-h CSS custom property so sticky search bars stick pixel-perfectly
   useEffect(() => {
@@ -80,7 +116,7 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
       <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16 gap-1.5 sm:gap-2">
           
-          {/* Logo & Brand Title: "KCP 자재관리(WMA)" */}
+          {/* Logo & Brand Title: "KCP 자재관리" */}
           <div
             className="flex items-center space-x-2 cursor-pointer shrink-0"
             onClick={() => onSelectTab('SCANNER')}
@@ -90,7 +126,7 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
             </div>
             <div className="flex items-center space-x-1">
               <span className="font-black text-sm sm:text-base tracking-tight text-slate-900 whitespace-nowrap">
-                KCP <span className="text-indigo-600 font-bold ml-0.5">자재관리(WMA)</span>
+                KCP <span className="text-indigo-600 font-bold ml-0.5">자재관리</span>
               </span>
             </div>
           </div>
@@ -151,15 +187,79 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
             </button>
           </nav>
 
-          {/* Right User Status, Refresh & Logout */}
+          {/* Right User Status, Refresh, Sync Queue & Logout */}
           <div className="flex items-center space-x-1 sm:space-x-1.5 shrink-0">
+            
+            {/* Sync Queue Button (오프라인: 빨간색, 정상: 하얀색, 동기화중: 파란색) */}
+            {onOpenSyncQueue && (
+              <button
+                type="button"
+                onClick={onOpenSyncQueue}
+                title={
+                  isSyncing
+                    ? 'ERP 동기화 진행 중...'
+                    : !isErpOnline
+                    ? `사내 DB 미연결 (오프라인) - 클릭하여 대기 큐 확인${queueCount > 0 ? ` (${queueCount}건)` : ''}`
+                    : queueCount > 0
+                    ? `동기화 대기 ${queueCount}건 (클릭하여 열기)`
+                    : '동기화 대기 큐 열기 (ERP 정상 연결)'
+                }
+                className={`relative p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer shrink-0 border flex items-center gap-1.5 font-medium ${
+                  !isErpOnline
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-700 shadow-sm animate-pulse'
+                    : isSyncing
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-700 shadow-sm'
+                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-2xs'
+                }`}
+              >
+                {isSyncing ? (
+                  <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white animate-spin" />
+                ) : (
+                  <CloudUpload className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${!isErpOnline ? 'text-white' : 'text-slate-700'}`} />
+                )}
+
+                {/* Status or Queue Count Badge */}
+                {isSyncing ? (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-white text-blue-700">
+                    동기화중
+                  </span>
+                ) : queueCount > 0 ? (
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                      !isErpOnline
+                        ? 'bg-white text-rose-700'
+                        : 'bg-indigo-600 text-white'
+                    }`}
+                  >
+                    {queueCount}
+                  </span>
+                ) : !isErpOnline ? (
+                  <span className="text-[10px] font-bold tracking-tight hidden sm:inline">
+                    오프라인
+                  </span>
+                ) : null}
+              </button>
+            )}
+
             {currentUser ? (
               <div className="flex items-center space-x-1 sm:space-x-1.5">
                 <div className="flex items-center space-x-1 sm:space-x-1.5 bg-slate-100 border border-slate-200 rounded-xl px-2 sm:px-3 py-1 sm:py-1.5 text-xs shrink-0">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></div>
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${isErpOnline ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
                   <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                   <span className="font-bold text-slate-900 truncate max-w-[65px] sm:max-w-none">{currentUser.name}</span>
                 </div>
+
+                {/* Server Connection Settings Button */}
+                {onOpenServerConfig && (
+                  <button
+                    type="button"
+                    onClick={onOpenServerConfig}
+                    title="서버 IP/포트 설정 및 접속 모드"
+                    className="p-1.5 sm:p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors cursor-pointer shrink-0 border border-slate-200 hover:border-indigo-200"
+                  >
+                    <Server className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </button>
+                )}
 
                 {/* Refresh Data Button */}
                 {onRefreshData && (
