@@ -5,9 +5,8 @@ const config: CapacitorConfig = {
   appName: 'KCP 자재관리',
   webDir: 'dist',
   server: {
-    url: 'http://192.168.2.29:3000',
-    cleartext: true
-  }
+    cleartext: true,
+  },
 };
 
 export default config;
