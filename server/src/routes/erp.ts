@@ -699,6 +699,25 @@ router.post('/auth/login', async (req: Request, res: Response) => {
     const cleanPwd = typeof password === 'string' ? password.trim() : '';
 
     const isConnected = await mssqlAdapter.connect();
+
+    // 가상 더미 DB 모드 지원: 사내망 DB 미연결 시에도 모든 작업자 로그인 정상 허용
+    if (mssqlAdapter.isDummyMode) {
+      const displayName = cleanCode.toLowerCase() === 'admin' ? '관리자' : (cleanCode === '34661' ? '김자재' : `${cleanCode} (작업자)`);
+      return res.json({
+        success: true,
+        offlineMode: false,
+        user: {
+          code: cleanCode,
+          name: displayName,
+          dept: '자재관리부',
+          role: '관리자',
+          isAdmin: true,
+          hidePrice: false,
+        },
+        message: `가상 DB 모드로 정상 로그인되었습니다. (${displayName})`,
+      });
+    }
+
     if (!isConnected) {
       if (cleanCode.toLowerCase() === 'admin' || cleanCode.toLowerCase() === 'demo') {
         return res.json({
@@ -904,6 +923,19 @@ router.post('/auth/login', async (req: Request, res: Response) => {
 router.get('/auth/users', async (_req: Request, res: Response) => {
   try {
     const isConnected = await mssqlAdapter.connect();
+
+    if (mssqlAdapter.isDummyMode) {
+      return res.json({
+        success: true,
+        data: [
+          { code: 'Admin', name: '관리자 (총괄)', dept: '자재관리부', role: '총괄관리자', isAdmin: true, hidePrice: false, hasPassword: true },
+          { code: '34661', name: '김자재 주임', dept: '특장자재창고', role: '입고검수원', isAdmin: false, hidePrice: false, hasPassword: true },
+          { code: '34662', name: '이검수 대리', dept: '함안자재창고', role: '입고검수원', isAdmin: false, hidePrice: false, hasPassword: true },
+          { code: '34663', name: '박반장 직장', dept: '화성자재창고', role: '재고관리자', isAdmin: false, hidePrice: false, hasPassword: true },
+        ],
+      });
+    }
+
     if (!isConnected) {
       const cachedUsers = Array.from(loadCachedUsers().values());
       return res.json({

@@ -25,6 +25,7 @@ import { soundHelper } from '../../utils/soundHelper';
 import { parseInboundQrCode, ParsedQrResult } from '../../utils/inboundQrParser';
 import { InboundSlip } from '../../types/inbound';
 import { InboundLiveScannerModal } from './InboundLiveScannerModal';
+import { scanWithNativeBarcodeScanner } from '../../utils/nativeBarcodeScanner';
 
 interface InboundScannerProps {
   onScanSuccess: (result: ParsedQrResult) => void;
@@ -156,7 +157,15 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
       }
 
       if (decodedText) {
-        handleScannedText(decodedText);
+        setIsProcessing(false);
+        soundHelper.playScanBeep();
+        try {
+          const parsed = parseInboundQrCode(decodedText);
+          onScanSuccess(parsed);
+        } catch (err: any) {
+          soundHelper.playErrorBuzzer();
+          setCameraError(err.message || 'QR 코드 해석에 실패했습니다.');
+        }
       } else {
         soundHelper.playErrorBuzzer();
         setCameraError('QR 코드를 감지하지 못했습니다. 조명이 밝은 곳에서 QR 코드가 정면에 오도록 다시 촬영해주세요.');
@@ -170,6 +179,40 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // High-speed scan entrypoint: Tries ML Kit on Capacitor native first, then smoothly falls back to InboundLiveScannerModal
+  const handleStartScan = async () => {
+    if (isProcessing) return;
+    setCameraError(null);
+
+    // 1. Capacitor 네이티브 앱 환경인 경우 ML Kit 실시간 스캐너 우선 시도
+    if (isNativeApp) {
+      try {
+        setIsProcessing(true);
+        const res = await scanWithNativeBarcodeScanner();
+        setIsProcessing(false);
+
+        if (res.hasScanned && res.content) {
+          handleScannedText(res.content);
+          return;
+        }
+
+        if (res.isCancelled) {
+          return;
+        }
+
+        if (res.error && !res.error.includes('Fallback')) {
+          setCameraError(res.error);
+        }
+      } catch (err: any) {
+        console.warn('Native ML Kit scanner attempt error:', err);
+        setIsProcessing(false);
+      }
+    }
+
+    // 2. 웹 브라우저 환경이거나 네이티브 ML Kit 부재 시: 실시간 html5-qrcode 라이브 뷰파인더 모달 실행
+    setIsLiveScannerOpen(true);
   };
 
   // Manual Form Search
@@ -278,17 +321,32 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
       >
         <div className="flex flex-col sm:flex-row items-center gap-2 max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto">
           
-          {/* Main Action: Continuous Live Camera QR Scanner / Native Camera Scan */}
+          {/* Main Action: Continuous Live Camera QR Scanner (ML Kit on Native -> html5-qrcode Fallback) */}
           <button
             type="button"
-            onClick={isNativeApp ? handleNativeCameraScan : () => setIsLiveScannerOpen(true)}
+            onClick={handleStartScan}
             disabled={isProcessing}
             className="w-full sm:w-auto h-11 sm:h-12 px-4 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs sm:text-sm font-black flex items-center justify-center space-x-2 shadow-md shadow-indigo-500/25 shrink-0 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+            title="실시간 고속 QR 카메라 스캐너 시작"
           >
             <Camera className="w-4 h-4 shrink-0 text-indigo-200" />
             <span>📷 QR 카메라 스캔</span>
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           </button>
+
+          {/* Native Fallback Photo Snap Button (네이티브 앱에서 사진 촬영 방식이 필요할 때 보조 수단) */}
+          {isNativeApp && (
+            <button
+              type="button"
+              onClick={handleNativeCameraScan}
+              disabled={isProcessing}
+              title="사진 촬영으로 QR 스캔"
+              className="hidden sm:flex h-11 sm:h-12 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold items-center justify-center border border-slate-300 transition-all shrink-0 cursor-pointer disabled:opacity-50"
+            >
+              <Camera className="w-3.5 h-3.5 mr-1 text-slate-500" />
+              <span>사진촬영</span>
+            </button>
+          )}
 
           {/* Warehouse Dropdown Listbox (창고 선택 기억 기능) */}
           <div className="w-full sm:w-52 shrink-0 relative">

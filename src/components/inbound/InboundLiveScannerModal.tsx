@@ -110,20 +110,47 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
         await scannerRef.current.stop();
       }
 
-      await scannerRef.current.start(
-        { facingMode },
-        {
-          fps: 15,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0,
+      // High-performance 1080p & continuous focus video constraints
+      const videoConstraints: MediaTrackConstraints = {
+        facingMode,
+        width: { ideal: 1920, min: 1280 },
+        height: { ideal: 1080, min: 720 },
+        advanced: [{ focusMode: 'continuous' } as any],
+      };
+
+      const scanConfig = {
+        fps: 24, // Optimized frame rate (24 FPS) for fast barcode acquisition
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          // Dynamic calculation: 70% of available viewfinder dimension
+          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+          const boxEdge = Math.max(200, Math.floor(minEdge * 0.7));
+          return { width: boxEdge, height: boxEdge };
         },
-        (decodedText) => {
-          handleDecoded(decodedText);
-        },
-        () => {
-          // ignore scan frame errors (continues scanning automatically at 15fps)
-        }
-      );
+        aspectRatio: 1.0,
+      };
+
+      try {
+        await scannerRef.current.start(
+          videoConstraints,
+          scanConfig,
+          (decodedText) => {
+            handleDecoded(decodedText);
+          },
+          () => {
+            // ignore scan frame errors (continues scanning automatically at 24fps)
+          }
+        );
+      } catch (streamErr) {
+        console.warn('Advanced 1080p video constraints fallback to standard facingMode:', streamErr);
+        await scannerRef.current.start(
+          { facingMode },
+          scanConfig,
+          (decodedText) => {
+            handleDecoded(decodedText);
+          },
+          () => {}
+        );
+      }
 
       setIsScanning(true);
 

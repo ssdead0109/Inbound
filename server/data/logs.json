@@ -1,5 +1,31 @@
 [
   {
+    "id": "log-cancel-1788336838480-4",
+    "itemId": "item-inb-1788329975610-881",
+    "itemCode": "900060050",
+    "itemName": "DU-BUSH",
+    "type": "OUT",
+    "quantity": 20,
+    "previousQty": 40,
+    "newQty": 20,
+    "timestamp": "2026-09-02T08:13:58.480Z",
+    "manager": "개발자 (오프라인 모드) (자재관리부)",
+    "reason": "입고 취소 [전표: 20080400002]"
+  },
+  {
+    "id": "log-cancel-1788336824237-814",
+    "itemId": "item-inb-1788332428603-756",
+    "itemCode": "000573000",
+    "itemName": "S-VALVE",
+    "type": "OUT",
+    "quantity": 1,
+    "previousQty": 1,
+    "newQty": 0,
+    "timestamp": "2026-09-02T08:13:44.237Z",
+    "manager": "개발자 (오프라인 모드) (자재관리부)",
+    "reason": "입고 취소 [전표: 20080300002]"
+  },
+  {
     "id": "log-inbound-1788332428604-101",
     "itemId": "item-inb-1788332428603-756",
     "itemCode": "000573000",

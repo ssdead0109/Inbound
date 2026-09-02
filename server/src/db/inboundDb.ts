@@ -6,8 +6,109 @@ import { StockLog } from '../types';
 
 const DATA_DIR = path.resolve(process.cwd(), 'server/data');
 const INBOUND_FILE = path.join(DATA_DIR, 'inbound_slips.json');
-// Real Inbound Slips Storage (샘플 데이터 완전 삭제됨)
-export const INITIAL_INBOUND_SLIPS: InboundSlip[] = [];
+// Real Inbound Slips Storage (오프라인/더미 모드용 기본 현장 전표 탑재)
+export const INITIAL_INBOUND_SLIPS: InboundSlip[] = [
+  {
+    slipNo: '20080400002',
+    supplierCode: 'SUP-JSB',
+    supplierName: '제이에스비(JSB)',
+    deliveryDate: '2026-09-02',
+    status: 'WAITING',
+    totalItems: 1,
+    totalOrderedQty: 100,
+    totalReceivedQty: 0,
+    totalDefectQty: 0,
+    memo: 'DU-BUSH 정기 납품 건',
+    items: [
+      {
+        id: 'item-demo-01',
+        itemCode: '900060050',
+        itemName: 'DU-BUSH',
+        spec: '60*50',
+        unit: 'EA',
+        orderQty: 100,
+        receivedQty: 100,
+        defectQty: 0,
+        warehouse: '특장자재창고',
+        unitPrice: 4500,
+        status: 'WAITING',
+      },
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    slipNo: 'DN-20260902-001',
+    supplierCode: 'SUP-KS01',
+    supplierName: '(주)한국정밀센서',
+    deliveryDate: '2026-09-02',
+    status: 'WAITING',
+    totalItems: 2,
+    totalOrderedQty: 450,
+    totalReceivedQty: 0,
+    totalDefectQty: 0,
+    memo: '광학센서 및 베어링 납품 건',
+    items: [
+      {
+        id: 'item-demo-02',
+        itemCode: 'ELEC-SENS-501',
+        itemName: '적외선 광학 거리 센서 모듈',
+        spec: 'VL53L1X ToF 4m Range',
+        unit: 'EA',
+        orderQty: 150,
+        receivedQty: 150,
+        defectQty: 0,
+        warehouse: '특장자재창고',
+        unitPrice: 18500,
+        status: 'WAITING',
+      },
+      {
+        id: 'item-demo-03',
+        itemCode: 'MECH-BEAR-202',
+        itemName: '고속 플랜지 볼베어링',
+        spec: 'F695-2RS 5x13x4mm',
+        unit: 'SET',
+        orderQty: 300,
+        receivedQty: 300,
+        defectQty: 0,
+        warehouse: '화성자재창고',
+        unitPrice: 6200,
+        status: 'WAITING',
+      },
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    slipNo: 'DN-20260902-002',
+    supplierCode: 'SUP-SHIN',
+    supplierName: '신우정공',
+    deliveryDate: '2026-09-02',
+    status: 'WAITING',
+    totalItems: 1,
+    totalOrderedQty: 25,
+    totalReceivedQty: 0,
+    totalDefectQty: 0,
+    memo: '유압 밸브 납품 건',
+    items: [
+      {
+        id: 'item-demo-04',
+        itemCode: '000573000',
+        itemName: 'S-VALVE',
+        spec: '200*180(COMMON USE)',
+        unit: 'EA',
+        orderQty: 25,
+        receivedQty: 25,
+        defectQty: 0,
+        warehouse: '특장자재창고',
+        unitPrice: 85000,
+        status: 'WAITING',
+      },
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
 
 let inboundCache: InboundSlip[] = [];
 
@@ -23,6 +124,10 @@ export function initInboundDatabase() {
     try {
       const raw = fs.readFileSync(INBOUND_FILE, 'utf-8');
       inboundCache = JSON.parse(raw);
+      if (inboundCache.length === 0) {
+        inboundCache = [...INITIAL_INBOUND_SLIPS];
+        saveInboundToDisk();
+      }
       console.log(`[Inbound DB] Loaded ${inboundCache.length} inbound slips from file.`);
     } catch (err) {
       console.error('[Inbound DB] Failed reading file, resetting to sample slips:', err);

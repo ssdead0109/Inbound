@@ -1245,7 +1245,7 @@ export const WarehouseRackVisualizerModal: React.FC<WarehouseRackVisualizerModal
                     <QRCodeSVG
                       value={generateRackSlotQRValue(qrModalSlot.warehouse, qrModalSlot.slotCode)}
                       size={160}
-                      level="H"
+                      level="M"
                     />
                   </div>
                 </div>

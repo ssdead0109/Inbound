@@ -1,26 +1,39 @@
 import { InventoryItem } from '../types/inventory';
 
 /**
+ * QR Code Error Correction Level 권장 표준
+ * - 'M' (15% 복원): 일반 라벨 및 데이터 라벨에 최적의 격자 물리 크기와 복원력 균형 제공
+ * - 'L' (7% 복원): 초소형(15mm 이하) 마이크로 라벨에 최적화하여 격자 물리 크기 극대화
+ */
+export const RECOMMENDED_QR_LEVEL = 'M' as const;
+
+/**
  * Encodes basic inventory item data into a compact base64 string for QR URLs.
- * This allows mobile devices scanning the QR to open the item page even if
- * their mobile browser LocalStorage doesn't already have this item.
+ * Omit empty or default values to minimize QR matrix density, maximizing scan speed and recognition distance.
  */
 export function encodeItemPayload(item: InventoryItem): string {
   try {
-    const compactObj = {
-      i: item.id,
+    const compactObj: Record<string, any> = {
       c: item.code,
       n: item.name,
-      s: item.spec || '',
-      cat: item.category || '',
-      w: item.warehouse || '',
-      r: item.rackLocation || '미입력',
-      q: item.quantity || 0,
-      u: item.unit || 'EA',
-      ss: item.safetyStock || 0,
-      sup: item.supplier || '',
-      nt: item.notes || '',
     };
+    if (item.id) compactObj.i = item.id;
+    if (item.spec && item.spec.trim()) compactObj.s = item.spec.trim();
+    if (item.category && item.category.trim() && item.category !== '기타' && item.category !== '일반') {
+      compactObj.cat = item.category.trim();
+    }
+    if (item.warehouse && item.warehouse.trim()) compactObj.w = item.warehouse.trim();
+    if (item.rackLocation && item.rackLocation.trim() && item.rackLocation !== '미입력') {
+      compactObj.r = item.rackLocation.trim();
+    }
+    if (typeof item.quantity === 'number' && item.quantity > 0) compactObj.q = item.quantity;
+    if (item.unit && item.unit !== 'EA') compactObj.u = item.unit.trim();
+    if (typeof item.safetyStock === 'number' && item.safetyStock !== 5 && item.safetyStock > 0) {
+      compactObj.ss = item.safetyStock;
+    }
+    if (item.supplier && item.supplier.trim()) compactObj.sup = item.supplier.trim();
+    if (item.notes && item.notes.trim()) compactObj.nt = item.notes.trim();
+
     const json = JSON.stringify(compactObj);
     return encodeURIComponent(btoa(unescape(encodeURIComponent(json))));
   } catch (err) {

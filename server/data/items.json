@@ -7,13 +7,13 @@
     "category": "납품자재",
     "warehouse": "화성부품영업창고",
     "rackLocation": "미지정",
-    "quantity": 1,
+    "quantity": 0,
     "unit": "EA",
     "safetyStock": 10,
     "price": 600000,
     "supplier": "신우",
     "createdAt": "2026-09-02T07:00:28.603Z",
-    "updatedAt": "2026-09-02T07:00:28.603Z"
+    "updatedAt": "2026-09-02T08:13:44.237Z"
   },
   {
     "id": "item-inb-1788329975610-881",
@@ -23,13 +23,13 @@
     "category": "납품자재",
     "warehouse": "화성부품영업창고",
     "rackLocation": "미지정",
-    "quantity": 40,
+    "quantity": 20,
     "unit": "EA",
     "safetyStock": 10,
     "price": 1100,
     "supplier": "제이에스비(JSB)",
     "createdAt": "2026-09-02T06:19:35.610Z",
-    "updatedAt": "2026-09-02T06:20:13.198Z"
+    "updatedAt": "2026-09-02T08:13:58.480Z"
   },
   {
     "id": "item-erp-000000000-1788242901554",

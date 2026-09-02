@@ -108,8 +108,13 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   }, []);
 
+  const ignoreBackUntilRef = useRef<number>(0);
+  const receivingEnteredAtRef = useRef<number>(0);
+
   // Unified Tab Navigation (Pushes to History Stack & window.history)
   const navigateToTab = useCallback((nextTab: InboundViewTab, slip?: InboundSlip | null) => {
+    ignoreBackUntilRef.current = Date.now() + 1500; // Ignore accidental back events for 1.5s after navigation
+
     if (slip) {
       setActiveSlip(slip);
     } else if (nextTab !== 'RECEIVING') {
@@ -157,7 +162,13 @@ export default function App() {
   // Register Back Handler for Inspection Screen (Priority 50)
   useEffect(() => {
     if (currentTab !== 'RECEIVING') return;
+    receivingEnteredAtRef.current = Date.now();
     return registerBackHandler('receivingScreen', 50, () => {
+      // Guard: Do not allow closing inspection screen within 1.5 seconds of entry (prevents camera activity return bounce)
+      if (Date.now() - receivingEnteredAtRef.current < 1500) {
+        console.log('[BackHandler] Guarded against premature exit from RECEIVING screen');
+        return true;
+      }
       handleBackFromReceiving();
       return true;
     });
@@ -184,6 +195,10 @@ export default function App() {
   // Global Back Trigger Handler
   // Returns true if handled by modal/subview/tabHistory, false if at root level
   const handleGlobalBack = useCallback((): boolean => {
+    if (Date.now() < ignoreBackUntilRef.current) {
+      console.log('[BackHandler] Ignored back event within cooldown period');
+      return true;
+    }
     return triggerBack();
   }, []);
 
@@ -226,6 +241,12 @@ export default function App() {
 
     const onPopState = (e: PopStateEvent) => {
       e.preventDefault();
+      // In native Capacitor app, physical back button is handled by CapApp.addListener('backButton') and MainActivity.
+      // PopState in native app is triggered by external Activity resumes (Camera, Gallery) and must be ignored.
+      if (Capacitor.isNativePlatform()) {
+        return;
+      }
+
       const handled = handleGlobalBack();
       if (handled) {
         try {
