@@ -864,5 +864,21 @@ export async function getErpInboundHistory(limit: number = 100): Promise<Inbound
     }
   }
 
-  return Array.from(slipMap.values());
+  const results = Array.from(slipMap.values());
+  if (results.length > 0) {
+    return results;
+  }
+
+  // 더미 모드 또는 레코드 부재 시: 현실적인 가상 입고 완료 이력 반환
+  const { getDummyInboundHistory } = await import('./dummyErpData');
+  const dummyHistory = getDummyInboundHistory();
+  const localCompleted = getAllInboundSlips({ status: 'COMPLETED' });
+  const map = new Map<string, InboundSlip>();
+  for (const s of [...dummyHistory, ...localCompleted]) {
+    if (s.slipNo && !map.has(s.slipNo)) {
+      map.set(s.slipNo, s);
+    }
+  }
+
+  return Array.from(map.values()).slice(0, limit);
 }

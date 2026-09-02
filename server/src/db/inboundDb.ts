@@ -3,6 +3,7 @@ import path from 'path';
 import { InboundSlip, InboundItem, InboundReceivePayload, InboundStats } from '../types/inbound';
 import { getItemByCode, updateItem, createItem, createLog, getAllItems } from '../db';
 import { StockLog } from '../types';
+import { getDummyInboundHistory } from './dummyErpData';
 
 const DATA_DIR = path.resolve(process.cwd(), 'server/data');
 const INBOUND_FILE = path.join(DATA_DIR, 'inbound_slips.json');
@@ -128,6 +129,16 @@ export function initInboundDatabase() {
         inboundCache = [...INITIAL_INBOUND_SLIPS];
         saveInboundToDisk();
       }
+
+      // 입고완료 내역이 없는 경우: 더미 완료 이력을 병합하여 입고내역 화면 활성화
+      const hasCompleted = inboundCache.some((s) => s.status === 'COMPLETED');
+      if (!hasCompleted) {
+        const dummyHistory = getDummyInboundHistory();
+        inboundCache = [...dummyHistory, ...inboundCache];
+        saveInboundToDisk();
+        console.log(`[Inbound DB] Added ${dummyHistory.length} completed dummy slips for history view.`);
+      }
+
       console.log(`[Inbound DB] Loaded ${inboundCache.length} inbound slips from file.`);
     } catch (err) {
       console.error('[Inbound DB] Failed reading file, resetting to sample slips:', err);

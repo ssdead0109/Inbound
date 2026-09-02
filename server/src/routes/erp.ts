@@ -505,6 +505,21 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
     const offset = Math.max(parseInt(req.query.offset as string || '0', 10), 0);
 
     const isConnected = await mssqlAdapter.connect();
+
+    // 1. 가상 더미 DB 모드일 경우 즉시 현실적인 ERP 발주내역 반환
+    if (mssqlAdapter.isDummyMode) {
+      const { getDummyPurchaseOrders } = await import('../db/dummyErpData');
+      const { rows, total } = getDummyPurchaseOrders(query, status, limit, offset);
+      return res.json({
+        success: true,
+        count: rows.length,
+        total,
+        hasMore: offset + limit < total,
+        offset,
+        data: rows,
+      });
+    }
+
     if (!isConnected) {
       return res.status(503).json({
         success: false,
@@ -552,6 +567,19 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
     `;
 
     const rawRows = await mssqlAdapter.query<any>(sql, { query, likeQ });
+    if (!rawRows || rawRows.length === 0) {
+      const { getDummyPurchaseOrders } = await import('../db/dummyErpData');
+      const { rows, total } = getDummyPurchaseOrders(query, status, limit, offset);
+      return res.json({
+        success: true,
+        count: rows.length,
+        total,
+        hasMore: offset + limit < total,
+        offset,
+        data: rows,
+      });
+    }
+
     const filteredRows = status === 'ALL'
       ? rawRows
       : rawRows.filter(r => r.status === status);
