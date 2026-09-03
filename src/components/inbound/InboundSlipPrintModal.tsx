@@ -238,7 +238,7 @@ export const InboundSlipPrintModal: React.FC<InboundSlipPrintModalProps> = ({
               <div className="flex justify-between items-end pt-4 border-t border-slate-300 text-xs">
                 <div>
                   <p className="text-slate-600 text-[11px]">위 물품의 입고 검수를 완료하였음을 확인합니다.</p>
-                  <p className="text-slate-400 text-[10px] mt-0.5">KCP 자재관리(WMA) 입고확인 시스템</p>
+                  <p className="text-slate-400 text-[10px] mt-0.5">KCP 자재 (Inbound) 입고확인 시스템</p>
                 </div>
                 <div className="flex space-x-6 text-center shrink-0">
                   <div className="w-24 border-b border-slate-400 pb-1">

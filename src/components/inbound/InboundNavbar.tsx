@@ -125,7 +125,7 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
             </div>
             <div className="flex items-center space-x-1">
               <span className="font-black text-sm sm:text-base tracking-tight text-slate-900 whitespace-nowrap">
-                KCP <span className="text-indigo-600 font-bold ml-0.5">자재관리</span>
+                KCP <span className="text-indigo-600 font-bold ml-0.5">자재</span>
               </span>
             </div>
           </div>

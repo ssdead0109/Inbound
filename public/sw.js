@@ -1,5 +1,5 @@
-// SmartRack PWA Service Worker
-const CACHE_NAME = 'smartrack-pwa-v1.0';
+// Inbound PWA Service Worker
+const CACHE_NAME = 'inbound-pwa-v1.0';
 
 const PRECACHE_ASSETS = [
   '/',

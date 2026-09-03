@@ -85,13 +85,13 @@ export const PWAInstallBanner: React.FC = () => {
           </div>
           <div className="min-w-0">
             <h4 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 truncate">
-              <span>스마트랙 앱 설치하기</span>
+              <span>KCP 자재 앱 설치하기</span>
               <span className="text-[10px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.2 rounded border border-indigo-500/40">
                 PWA
               </span>
             </h4>
             <p className="text-[11px] text-slate-300 truncate">
-              홈 화면에 추가하여 전체화면 앱으로 사용하세요
+              홈 화면에 추가하여 편리한 전체화면 앱으로 사용하세요
             </p>
           </div>
         </div>

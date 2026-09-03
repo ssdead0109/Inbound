@@ -1,7 +1,7 @@
 {
-  "name": "스마트랙 입고검수 (SmartRack)",
-  "short_name": "스마트랙",
-  "description": "KCP 스마트랙 ERP 연동 실시간 입고 검수 및 자재 관리 시스템",
+  "name": "KCP 자재",
+  "short_name": "KCP 자재",
+  "description": "KCP Inbound ERP 연동 실시간 입고 검수 및 자재 관리 시스템",
   "start_url": "/",
   "scope": "/",
   "id": "/",

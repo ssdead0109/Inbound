@@ -4,7 +4,7 @@ import { isDummySlip } from './dummyHelper';
 import { matchesMultiKeyword } from './searchHelper';
 import { getMaterialGrade } from './gradeHelper';
 
-const DB_NAME = 'SmartRack_IndexedDB';
+const DB_NAME = 'Inbound_IndexedDB';
 const DB_VERSION = 2;
 
 export const STORE_MATERIALS = 'erp_materials';

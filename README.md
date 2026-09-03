@@ -1,6 +1,6 @@
-# 🏭 SmartRack (스마트 랙 & 재고 관리 시스템)
+# 🏭 KCP 자재 (Inbound - 실시간 입고 검수 및 자재 관리 시스템)
 
-Node.js/Express 백엔드(REST API)와 React Vite 프론트엔드로 구성된 산업용 스마트 재고/랙 관리 시스템입니다.
+Node.js/Express 백엔드(REST API)와 React Vite 프론트엔드, Android Capacitor로 구성된 KCP 산업용 자재/입고 관리 시스템입니다.
 
 ---
 

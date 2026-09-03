@@ -94,7 +94,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 app.listen(PORT, () => {
   console.log(`=========================================`);
-  console.log(`🚀 SmartRack Backend Server is running!`);
+  console.log(`🚀 Inbound Backend Server is running!`);
   console.log(`📡 URL: http://localhost:${PORT}`);
   console.log(`🔗 Health: http://localhost:${PORT}/api/health`);
   console.log(`=========================================`);

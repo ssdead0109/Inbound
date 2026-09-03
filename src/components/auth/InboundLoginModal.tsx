@@ -238,7 +238,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
             )}
 
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              KCP 자재관리시스템 (WMA)
+              KCP 자재 (Inbound)
             </h1>
             <p className="text-xs text-slate-500 mt-1 font-medium">
               사내 ERP 계정(ID / 비밀번호)으로 로그인하세요

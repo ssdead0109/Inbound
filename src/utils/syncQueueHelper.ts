@@ -18,7 +18,7 @@ import { processErpInboundReceive, fetchErpStatus, cancelErpInboundReceive } fro
 import { processInboundReceive as processLocalReceive, cancelInboundSlipApi } from '../api/inbound';
 import { soundHelper } from './soundHelper';
 
-export const SYNC_QUEUE_CHANGE_EVENT = 'smartrack:sync-queue-changed';
+export const SYNC_QUEUE_CHANGE_EVENT = 'inbound:sync-queue-changed';
 
 export function notifyQueueChanged() {
   if (typeof window !== 'undefined') {
