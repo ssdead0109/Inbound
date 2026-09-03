@@ -6,6 +6,10 @@ import {
   ArrowRight,
   AlertCircle,
   RefreshCw,
+  Globe,
+  Settings,
+  Check,
+  X
 } from 'lucide-react';
 import { ErpUser, loginErpUser, fetchErpStatus } from '../../api/erpApi';
 import { soundHelper } from '../../utils/soundHelper';
@@ -14,6 +18,7 @@ import {
   getCachedUserAuth,
   CachedAuthUser
 } from '../../utils/indexedDbHelper';
+import { getServerBaseUrl, setCustomServerUrl } from '../../utils/serverConfig';
 
 interface InboundLoginModalProps {
   onLoginSuccess: (user: ErpUser) => void;
@@ -40,13 +45,21 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
   const [errorMessage, setErrorMessage] = useState('');
   const [isErpConnected, setIsErpConnected] = useState<boolean | null>(null);
 
+  // Server URL Configuration State (for mobile apps / remote access)
+  const [showServerSetting, setShowServerSetting] = useState(false);
+  const [customServerUrl, setCustomServerUrlInput] = useState(() => getServerBaseUrl() || '');
+  const [serverTestMsg, setServerTestMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [isTestingServer, setIsTestingServer] = useState(false);
+
   // Check ERP connection status periodically
   const checkStatus = () => {
     fetchErpStatus()
       .then((status) => {
+        // 백엔드와 DB 중 하나라도 연결되면 정상 온라인 모드!
         setIsErpConnected(Boolean(status?.isConnected));
       })
       .catch(() => {
+        // 백엔드, 프론트엔드, DB 서버가 모두 연결 안 될 경우에만 오프라인 모드!
         setIsErpConnected(false);
       });
   };
@@ -56,6 +69,31 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
     const timer = setInterval(checkStatus, 15000);
     return () => clearInterval(timer);
   }, []);
+
+  const handleSaveServerUrl = async () => {
+    setIsTestingServer(true);
+    setServerTestMsg(null);
+    try {
+      const target = customServerUrl.trim();
+      setCustomServerUrl(target);
+      const status = await fetchErpStatus();
+      if (status && status.isConnected) {
+        setIsErpConnected(true);
+        setServerTestMsg({ text: '✅ 서버 및 DB 연결 성공!', ok: true });
+        setTimeout(() => {
+          setShowServerSetting(false);
+          setServerTestMsg(null);
+        }, 1200);
+      } else {
+        setIsErpConnected(false);
+        setServerTestMsg({ text: '⚠️ 서버 응답했으나 DB 미연결', ok: false });
+      }
+    } catch (err: any) {
+      setServerTestMsg({ text: `❌ 연결 실패: ${err.message || '응답 없음'}`, ok: false });
+    } finally {
+      setIsTestingServer(false);
+    }
+  };
 
   const handleSubmit = async (e?: React.FormEvent, directUser?: CachedAuthUser) => {
     if (e) e.preventDefault();
@@ -73,7 +111,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
     try {
       const user = await loginErpUser(targetCode, targetPwd);
 
-      // Save to client-side IndexedDB for complete offline capability
+      // Save to client-side IndexedDB for single-user offline capability
       await saveCachedUserAuth({
         code: user.code,
         name: user.name,
@@ -126,7 +164,13 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
       }
 
       soundHelper.playErrorBuzzer();
-      setErrorMessage(err.message || '로그인에 실패했습니다. 사번과 비밀번호를 확인해주세요.');
+      const rawMsg = err.message || '';
+      if (rawMsg.includes('Failed to fetch') || err.name === 'TypeError') {
+        setErrorMessage('서버에 접속할 수 없습니다 (Failed to fetch). 스마트폰 앱인 경우 아래 [서버 주소 설정]에서 Render 서버 URL을 등록해주세요.');
+        setShowServerSetting(true);
+      } else {
+        setErrorMessage(rawMsg || '로그인에 실패했습니다. 사번과 비밀번호를 확인해주세요.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -150,8 +194,8 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
           </div>
 
           <div>
-            {/* ERP Connection Status Badge */}
-            {isErpConnected === false ? (
+            {/* ERP Connection Status Badge: 백엔드, 프론트엔드, DB가 연결이 안 될 경우에만 오프라인 모드 활성화! */}
+            {isErpConnected === false && (
               <div className="space-y-2 mb-2">
                 <div
                   onClick={checkStatus}
@@ -159,7 +203,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
                   title="클릭하여 연결 상태 재확인"
                 >
                   <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
-                  <span>📴 오프라인 모드 (로컬 검수 가능)</span>
+                  <span>📴 오프라인 모드 (서버 미연결)</span>
                   <RefreshCw className="w-2.5 h-2.5 ml-0.5 text-amber-600" />
                 </div>
 
@@ -170,18 +214,20 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
                     <span>로컬 오프라인 검수 활성화</span>
                   </div>
                   <p className="text-[11px] text-slate-600 leading-snug font-medium">
-                    본인 계정으로 로그인하시면, 네트워크가 없어도 기기에 저장된 데이터로 현장 입고 검수를 즉시 진행하실 수 있습니다.
+                    서버와 연결되지 않아 기기에 저장된 본인 계정 정보와 로컬 데이터로 검수를 진행합니다.
                   </p>
                 </div>
               </div>
-            ) : (
+            )}
+
+            {isErpConnected === true && (
               <div
                 onClick={checkStatus}
                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-700 font-bold mb-2 cursor-pointer hover:bg-emerald-100 transition-colors shadow-2xs"
                 title="클릭하여 연결 상태 재확인"
               >
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <span>🌐 클라우드 ERP 실시간 연동 정상</span>
+                <span>🌐 온라인 연동 정상</span>
               </div>
             )}
 
@@ -196,9 +242,62 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
 
         {/* Error Feedback */}
         {errorMessage && (
-          <div className="flex items-center space-x-2 bg-rose-50 border border-rose-200 text-rose-700 p-3.5 rounded-2xl text-xs font-semibold animate-shake">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-            <span>{errorMessage}</span>
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2 bg-rose-50 border border-rose-200 text-rose-700 p-3.5 rounded-2xl text-xs font-semibold animate-shake">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{errorMessage}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Inline Server URL Configuration Box (Especially for Mobile App) */}
+        {showServerSetting && (
+          <div className="bg-indigo-50/80 border border-indigo-200 rounded-2xl p-4 text-xs space-y-2.5 shadow-2xs animate-in zoom-in-95">
+            <div className="flex items-center justify-between font-bold text-indigo-900">
+              <div className="flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-indigo-600" />
+                <span>서버 접속 주소 (Render / 사내 서버)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowServerSetting(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-[11px] text-indigo-700 leading-snug">
+              스마트폰 앱에서 접속할 백엔드 서버 URL(예: Render 주소)을 입력해주세요.
+            </p>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={customServerUrl}
+                onChange={(e) => setCustomServerUrlInput(e.target.value)}
+                placeholder="https://your-app.onrender.com"
+                className="w-full bg-white text-slate-900 placeholder-slate-400 px-3 py-2 rounded-xl border border-indigo-300 focus:outline-none focus:border-indigo-600 font-mono text-xs"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isTestingServer}
+                  onClick={handleSaveServerUrl}
+                  className="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isTestingServer ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  <span>저장 및 연결 테스트</span>
+                </button>
+              </div>
+              {serverTestMsg && (
+                <div className={`p-2 rounded-xl text-[11px] font-bold ${serverTestMsg.ok ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                  {serverTestMsg.text}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -276,16 +375,29 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
             {isLoading ? (
               <span className="inline-flex items-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>ERP 계정 인증 중...</span>
+                <span>계정 인증 중...</span>
               </span>
             ) : (
               <>
-                <span>로그인 및 현장 검수 시작</span>
+                <span>입고확인 시작</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
           </button>
         </form>
+
+        {/* Server URL Quick Setting Link */}
+        <div className="pt-2 text-center border-t border-slate-100">
+          <button
+            type="button"
+            onClick={() => setShowServerSetting(!showServerSetting)}
+            className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer py-1 px-2.5 rounded-xl hover:bg-slate-100"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>서버 설정: <strong className="font-mono text-slate-600">{getServerBaseUrl() ? getServerBaseUrl().replace(/^https?:\/\//, '') : '자동(현재 도메인)'}</strong></span>
+            <Settings className="w-3 h-3 text-slate-400" />
+          </button>
+        </div>
 
       </div>
 

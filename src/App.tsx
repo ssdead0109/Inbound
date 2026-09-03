@@ -901,7 +901,7 @@ export default function App() {
           }`}
         >
           <History className="w-5 h-5" />
-          <span>입고 내역</span>
+          <span>입고내역</span>
         </button>
 
         <button
@@ -912,7 +912,7 @@ export default function App() {
           }`}
         >
           <FileText className="w-5 h-5 text-blue-500" />
-          <span>발주 조회</span>
+          <span>발주조회</span>
         </button>
 
         <button

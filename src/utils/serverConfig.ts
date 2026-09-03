@@ -21,6 +21,7 @@ export const STORAGE_KEY_DB_PORT = 'kcp_db_port';
 export const STORAGE_KEY_HOST = 'kcp_server_host';
 export const STORAGE_KEY_PORT = 'kcp_server_port';
 export const STORAGE_KEY_OFFLINE_PREF = 'kcp_offline_mode_preferred';
+export const STORAGE_KEY_CUSTOM_URL = 'kcp_custom_server_url';
 
 // Default values
 export const DEFAULT_BACKEND_HOST = '192.168.2.29';
@@ -246,19 +247,57 @@ export function setOfflineModePreferred(isOffline: boolean): void {
 }
 
 /**
+ * 커스텀 서버 URL(Render 등) 저장
+ */
+export function setCustomServerUrl(url: string): void {
+  try {
+    const clean = url.trim().replace(/\/+$/, '');
+    if (clean) {
+      localStorage.setItem(STORAGE_KEY_CUSTOM_URL, clean);
+    } else {
+      localStorage.removeItem(STORAGE_KEY_CUSTOM_URL);
+    }
+    window.dispatchEvent(new CustomEvent('kcp:server-config-changed'));
+  } catch (e) {
+    console.warn('[serverConfig] Failed to save custom server url:', e);
+  }
+}
+
+/**
  * API 호출용 서버 베이스 URL 계산
  */
 export function getServerBaseUrl(): string {
-  const isNative = Capacitor.isNativePlatform();
-  const savedHost = localStorage.getItem(STORAGE_KEY_BACKEND_HOST)?.trim() || localStorage.getItem(STORAGE_KEY_HOST)?.trim();
-  const savedPort = localStorage.getItem(STORAGE_KEY_BACKEND_PORT)?.trim() || localStorage.getItem(STORAGE_KEY_PORT)?.trim();
+  // 1. 사용자가 직접 지정한 커스텀 서버 URL (예: https://xxx.onrender.com)
+  try {
+    const custom = localStorage.getItem(STORAGE_KEY_CUSTOM_URL)?.trim();
+    if (custom) return custom.replace(/\/+$/, '');
+  } catch { /* ignore */ }
 
-  if (savedHost || savedPort || isNative) {
-    const host = savedHost || getDefaultBackendHost();
-    const port = savedPort || getDefaultBackendPort();
-    return `http://${host}:${port}`;
+  // 2. 환경변수 VITE_API_URL / VITE_BACKEND_URL
+  const envUrl = (import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
+    return envUrl.trim().replace(/\/+$/, '');
   }
 
+  // 3. 웹 브라우저 환경 (localhost가 아니면 window.location.origin 사용)
+  if (!Capacitor.isNativePlatform() && typeof window !== 'undefined' && window.location.origin) {
+    if (!window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+      return window.location.origin;
+    }
+    return '';
+  }
+
+  // 4. 모바일 앱 환경에서 수동 저장된 호스트가 있는 경우
+  const savedHost = localStorage.getItem(STORAGE_KEY_BACKEND_HOST)?.trim() || localStorage.getItem(STORAGE_KEY_HOST)?.trim();
+  const savedPort = localStorage.getItem(STORAGE_KEY_BACKEND_PORT)?.trim() || localStorage.getItem(STORAGE_KEY_PORT)?.trim();
+  if (savedHost) {
+    if (savedHost.startsWith('http://') || savedHost.startsWith('https://')) {
+      return savedHost.replace(/\/+$/, '');
+    }
+    return savedPort ? `http://${savedHost}:${savedPort}` : `http://${savedHost}`;
+  }
+
+  // 5. 기본값: 모바일 앱에서 아무 설정이 없을 때 기본 빈 문자열 반환 (상대 경로)
   return '';
 }
 
@@ -269,9 +308,14 @@ export async function testBackendConnection(
   host: string,
   port: string
 ): Promise<{ success: boolean; latencyMs: number; error?: string; isErpConnected?: boolean }> {
-  const cleanHost = host.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-  const cleanPort = port.trim();
-  const targetUrl = `http://${cleanHost}:${cleanPort}/api/erp/status`;
+  let targetUrl = '';
+  if (host.startsWith('http://') || host.startsWith('https://')) {
+    targetUrl = `${host.replace(/\/+$/, '')}/api/erp/status`;
+  } else {
+    const cleanHost = host.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    const cleanPort = port.trim();
+    targetUrl = cleanPort ? `http://${cleanHost}:${cleanPort}/api/erp/status` : `http://${cleanHost}/api/erp/status`;
+  }
 
   const startTime = Date.now();
   const controller = new AbortController();

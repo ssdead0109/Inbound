@@ -158,7 +158,7 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
               }`}
             >
               <History className="w-4 h-4" />
-              <span>입고 내역</span>
+              <span>입고내역</span>
             </button>
 
             <button
@@ -170,7 +170,7 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
               }`}
             >
               <FileText className="w-4 h-4 text-blue-500" />
-              <span>발주 조회</span>
+              <span>발주조회</span>
             </button>
 
             <button
