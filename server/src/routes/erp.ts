@@ -364,11 +364,41 @@ router.get('/materials/sync', async (req: Request, res: Response) => {
   }
 });
 
+// Helper for Grade calculation in Material API
+function computeItemGrade(item: any): string {
+  if (item.grade) {
+    const g = String(item.grade).trim();
+    if (['A등급', 'B등급', 'C등급', 'D등급', 'O등급', 'S등급'].includes(g)) return g;
+    if (['A', 'B', 'C', 'D', 'O', 'S'].includes(g.toUpperCase())) return `${g.toUpperCase()}등급`;
+  }
+  if (item.category) {
+    const c = String(item.category).trim();
+    if (['A등급', 'B등급', 'C등급', 'D등급', 'O등급', 'S등급'].includes(c)) return c;
+    if (['A', 'B', 'C', 'D', 'O', 'S'].includes(c.toUpperCase())) return `${c.toUpperCase()}등급`;
+  }
+  const price = Number(item.unitPrice) || 0;
+  if (price >= 500000) return 'A등급';
+  if (price >= 50000) return 'B등급';
+  if (price >= 5000) return 'C등급';
+  return 'D등급';
+}
+
+function gradeRank(grade: string): number {
+  if (grade.startsWith('S') || grade.startsWith('A')) return 1;
+  if (grade.startsWith('B')) return 2;
+  if (grade.startsWith('C')) return 3;
+  if (grade.startsWith('D')) return 4;
+  return 5;
+}
+
 // GET /api/erp/materials - ERP 자재 검색 (서버 인메모리 초고속 <1ms 필터링)
 router.get('/materials', async (req: Request, res: Response) => {
   try {
     const query = typeof req.query.query === 'string' ? req.query.query.trim().toLowerCase() : '';
     const whCode = typeof req.query.whCode === 'string' ? req.query.whCode.trim() : 'ALL';
+    const grade = typeof req.query.grade === 'string' ? req.query.grade.trim() : 'ALL';
+    const category = typeof req.query.category === 'string' ? req.query.category.trim() : 'ALL';
+    const sortBy = typeof req.query.sortBy === 'string' ? req.query.sortBy.trim() : 'NAME_ASC';
     const limit = Math.min(Math.max(parseInt(req.query.limit as string || '60', 10), 1), 500);
     const offset = Math.max(parseInt(req.query.offset as string || '0', 10), 0);
 
@@ -392,6 +422,58 @@ router.get('/materials', async (req: Request, res: Response) => {
             return tokens.every(token => combinedText.includes(token));
           });
         }
+      }
+
+      // 3) 제품분류 인메모리 필터링
+      if (category && category !== 'ALL') {
+        const cat = category.trim().toLowerCase();
+        filtered = filtered.filter((item) => {
+          const itemCat = String(item.category || '').toLowerCase();
+          const itemName = String(item.name || '').toLowerCase();
+          const itemNotes = String(item.notes || '').toLowerCase();
+
+          if (cat === '완제품') {
+            return itemCat.includes('완제품') || itemCat.includes('제품') || itemName.includes('완제품');
+          }
+          if (cat === '소모품') {
+            return itemCat.includes('소모') || itemCat.includes('부자재') || itemCat.includes('저장품') || itemName.includes('소모');
+          }
+          if (cat === '제작자재') {
+            return itemCat.includes('제작') || itemCat.includes('원자재') || itemCat.includes('가공') || itemCat.includes('자재') || itemName.includes('제작');
+          }
+          return itemCat.includes(cat) || itemName.includes(cat) || itemNotes.includes(cat);
+        });
+      }
+
+      // 4) 등급 인메모리 필터링
+      if (grade && grade !== 'ALL') {
+        const cleanGrade = grade.trim();
+        filtered = filtered.filter((item) => computeItemGrade(item) === cleanGrade);
+      }
+
+      // 5) 정렬(SortBy)
+      if (sortBy) {
+        filtered = [...filtered].sort((a, b) => {
+          switch (sortBy) {
+            case 'NAME_DESC':
+              return String(b.name || '').localeCompare(String(a.name || ''), 'ko');
+            case 'CODE_ASC':
+              return String(a.code || '').localeCompare(String(b.code || ''), 'ko');
+            case 'STOCK_DESC':
+              return (Number(b.currentStock) || 0) - (Number(a.currentStock) || 0);
+            case 'STOCK_ASC':
+              return (Number(a.currentStock) || 0) - (Number(b.currentStock) || 0);
+            case 'PRICE_DESC':
+              return (Number(b.unitPrice) || 0) - (Number(a.unitPrice) || 0);
+            case 'PRICE_ASC':
+              return (Number(a.unitPrice) || 0) - (Number(b.unitPrice) || 0);
+            case 'GRADE_ASC':
+              return gradeRank(computeItemGrade(a)) - gradeRank(computeItemGrade(b));
+            case 'NAME_ASC':
+            default:
+              return String(a.name || '').localeCompare(String(a.name || ''), 'ko');
+          }
+        });
       }
 
       const pagedData = filtered.slice(offset, offset + limit);

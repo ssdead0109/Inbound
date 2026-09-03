@@ -144,9 +144,12 @@ export async function searchErpMaterials(
   query: string = '',
   whCode: string = 'ALL',
   limit: number = 60,
-  offset: number = 0
+  offset: number = 0,
+  grade: string = 'ALL',
+  category: string = 'ALL',
+  sortBy: string = 'NAME_ASC'
 ): Promise<ErpMaterial[]> {
-  const result = await searchErpMaterialsWithTotal(query, whCode, limit, offset);
+  const result = await searchErpMaterialsWithTotal(query, whCode, limit, offset, grade, category, sortBy);
   return result.data;
 }
 
@@ -154,11 +157,17 @@ export async function searchErpMaterialsWithTotal(
   query: string = '',
   whCode: string = 'ALL',
   limit: number = 60,
-  offset: number = 0
+  offset: number = 0,
+  grade: string = 'ALL',
+  category: string = 'ALL',
+  sortBy: string = 'NAME_ASC'
 ): Promise<{ data: ErpMaterial[]; total: number; hasMore: boolean }> {
   const params = new URLSearchParams();
   if (query) params.set('query', query);
   if (whCode) params.set('whCode', whCode);
+  if (grade && grade !== 'ALL') params.set('grade', grade);
+  if (category && category !== 'ALL') params.set('category', category);
+  if (sortBy) params.set('sortBy', sortBy);
   params.set('limit', limit.toString());
   if (offset > 0) params.set('offset', offset.toString());
 

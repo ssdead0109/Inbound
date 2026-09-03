@@ -12,7 +12,12 @@ import {
   Warehouse,
   ArrowLeft,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  SlidersHorizontal,
+  RotateCcw,
+  ArrowUpDown,
+  Tag,
+  Package
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -32,7 +37,8 @@ import {
   searchMaterialsInIndexedDb,
   searchMaterialsInIndexedDbWithTotal,
   getUniqueWarehousesFromIndexedDb,
-  getMaterialsCountInIndexedDb
+  getMaterialsCountInIndexedDb,
+  getUniqueCategoriesFromIndexedDb
 } from '../../utils/indexedDbHelper';
 import { registerBackHandler } from '../../utils/backHandler';
 import { VirtualGrid } from '../common/VirtualScrollContainer';
@@ -49,6 +55,11 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
   const [erpStatus, setErpStatus] = useState<ErpStatus | null>(null);
   const [warehouses, setWarehouses] = useState<ErpWarehouse[]>([]);
   const [selectedWh, setSelectedWh] = usePersistedState<string>('filter_materials_wh', 'ALL');
+  const [selectedGrade, setSelectedGrade] = usePersistedState<string>('filter_materials_grade', 'ALL');
+  const [selectedCategory, setSelectedCategory] = usePersistedState<string>('filter_materials_category', 'ALL');
+  const [sortBy, setSortBy] = usePersistedState<string>('filter_materials_sort', 'NAME_ASC');
+  const [isFilterExpanded, setIsFilterExpanded] = usePersistedState<boolean>('filter_materials_expanded', true);
+  const [dbCategories, setDbCategories] = useState<string[]>([]);
   const [materials, setMaterials] = useState<ErpMaterial[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [searchTerm, setSearchTerm] = usePersistedState<string>('filter_materials_search', '');
@@ -102,10 +113,11 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
     }
   }, [selectedCode, qrPrintItem]);
 
-  // Load Status, Warehouses, and initial background warm-up on mount
+  // Load Status, Warehouses, Categories, and initial background warm-up on mount
   useEffect(() => {
     loadStatus();
     loadWarehouses();
+    loadCategories();
 
     const initWarmup = async () => {
       try {
@@ -115,6 +127,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
           if (res && res.data && res.data.length > 0) {
             await saveMaterialsToIndexedDb(res.data).catch(() => {});
             loadWarehouses();
+            loadCategories();
           }
         }
       } catch {
@@ -130,6 +143,15 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
       setErpStatus(status);
     } catch (err: any) {
       console.error('Failed to load ERP status:', err);
+    }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const cats = await getUniqueCategoriesFromIndexedDb().catch(() => []);
+      setDbCategories(cats);
+    } catch (err) {
+      console.error('Failed to load categories:', err);
     }
   };
 
@@ -160,7 +182,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
     }
   };
 
-  // API 및 인덱스DB 창고 정보로부터 고유 창고 목록 추출 (자재 목록 변경과 분리하여 불필요한 재계산 제거)
+  // API 및 인덱스DB 창고 정보로부터 고유 창고 목록 추출
   const dynamicWarehouses = useMemo(() => {
     const map = new Map<string, { code: string; name: string; itemCount?: number }>();
 
@@ -180,13 +202,32 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
     return list.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
   }, [warehouses]);
 
-  // Execute Search (Local-First 즉시 표출 + 서버 초고속 동기화)
-  const executeSearch = useCallback(async (query: string, whCode: string) => {
+  // 제품분류 목록 동적 구성 (기본 사용자 요구 분류 + DB 저장 분류 병합)
+  const dynamicCategories = useMemo(() => {
+    const primary = ['완제품', '제작자재', '소모품'];
+    const set = new Set<string>(primary);
+    for (const c of dbCategories) {
+      if (c && c.trim()) set.add(c.trim());
+    }
+    for (const m of materials) {
+      if (m.category && m.category.trim()) set.add(m.category.trim());
+    }
+    return Array.from(set);
+  }, [dbCategories, materials]);
+
+  // Execute Search (Local-First 즉시 표출 + 서버 초고속 동기화 + 다차원 필터/정렬)
+  const executeSearch = useCallback(async (
+    query: string,
+    whCode: string,
+    grade: string,
+    category: string,
+    sort: string
+  ) => {
     const currentSeq = ++searchSeqRef.current;
 
     // 1. FAST LOCAL-FIRST: 즉시 인덱스DB/인메모리 캐시에서 0.01초 만에 화면에 먼저 표출 (랙 완벽 차단)
     try {
-      const local = await searchMaterialsInIndexedDbWithTotal(query, PAGE_SIZE, 0, whCode);
+      const local = await searchMaterialsInIndexedDbWithTotal(query, PAGE_SIZE, 0, whCode, grade, category, sort);
       if (local && local.data.length > 0 && currentSeq === searchSeqRef.current) {
         setMaterials(local.data);
         setTotalCount(local.total);
@@ -199,7 +240,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
     // 2. 서버 캐시 조회 및 최신화 (< 1ms 응답)
     try {
       setIsLoading(true);
-      const serverResults = await searchErpMaterialsWithTotal(query, whCode, PAGE_SIZE, 0);
+      const serverResults = await searchErpMaterialsWithTotal(query, whCode, PAGE_SIZE, 0, grade, category, sort);
       if (currentSeq === searchSeqRef.current) {
         setMaterials(serverResults.data);
         setTotalCount(serverResults.total);
@@ -227,11 +268,27 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
       let nextBatch: ErpMaterial[] = [];
 
       try {
-        const res = await searchErpMaterialsWithTotal(searchTerm, selectedWh, PAGE_SIZE, nextOffset);
+        const res = await searchErpMaterialsWithTotal(
+          searchTerm,
+          selectedWh,
+          PAGE_SIZE,
+          nextOffset,
+          selectedGrade,
+          selectedCategory,
+          sortBy
+        );
         nextBatch = res.data;
         if (res.total > 0) setTotalCount(res.total);
       } catch {
-        const local = await searchMaterialsInIndexedDbWithTotal(searchTerm, PAGE_SIZE, nextOffset, selectedWh);
+        const local = await searchMaterialsInIndexedDbWithTotal(
+          searchTerm,
+          PAGE_SIZE,
+          nextOffset,
+          selectedWh,
+          selectedGrade,
+          selectedCategory,
+          sortBy
+        );
         nextBatch = local.data;
         if (local.total > 0) setTotalCount(local.total);
       }
@@ -252,27 +309,58 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
     } finally {
       setIsLoadingMore(false);
     }
-  }, [isLoading, isLoadingMore, hasMore, materials.length, searchTerm, selectedWh]);
+  }, [
+    isLoading,
+    isLoadingMore,
+    hasMore,
+    materials.length,
+    searchTerm,
+    selectedWh,
+    selectedGrade,
+    selectedCategory,
+    sortBy
+  ]);
 
-  // Handle warehouse change (중복 호출 원천 제거 - useEffect에서 단일 실행)
+  // Handle warehouse change
   const handleSelectWarehouse = (whCode: string) => {
     setSelectedWh(whCode);
   };
 
-  // Trigger search on query change or warehouse change (단일 진입점)
+  // Trigger search on query, warehouse, grade, category, or sort change
   useEffect(() => {
-    executeSearch(debouncedQuery, selectedWh);
-  }, [debouncedQuery, selectedWh, executeSearch]);
+    executeSearch(debouncedQuery, selectedWh, selectedGrade, selectedCategory, sortBy);
+  }, [debouncedQuery, selectedWh, selectedGrade, selectedCategory, sortBy, executeSearch]);
 
   // Listen to global top navbar refresh event
   useEffect(() => {
     const handleGlobalRefresh = () => {
-      executeSearch(searchTerm, selectedWh);
+      executeSearch(searchTerm, selectedWh, selectedGrade, selectedCategory, sortBy);
       loadWarehouses();
+      loadCategories();
     };
     window.addEventListener('app:refresh-data', handleGlobalRefresh);
     return () => window.removeEventListener('app:refresh-data', handleGlobalRefresh);
-  }, [executeSearch, searchTerm, selectedWh]);
+  }, [executeSearch, searchTerm, selectedWh, selectedGrade, selectedCategory, sortBy]);
+
+  // Active filter status check & reset helper
+  const hasActiveFilters =
+    selectedWh !== 'ALL' ||
+    selectedGrade !== 'ALL' ||
+    selectedCategory !== 'ALL' ||
+    sortBy !== 'NAME_ASC';
+
+  const activeFilterCount =
+    (selectedWh !== 'ALL' ? 1 : 0) +
+    (selectedGrade !== 'ALL' ? 1 : 0) +
+    (selectedCategory !== 'ALL' ? 1 : 0) +
+    (sortBy !== 'NAME_ASC' ? 1 : 0);
+
+  const handleResetFilters = () => {
+    setSelectedWh('ALL');
+    setSelectedGrade('ALL');
+    setSelectedCategory('ALL');
+    setSortBy('NAME_ASC');
+  };
 
   // Handle manual sync refresh
   const handleRefresh = async () => {
@@ -784,50 +872,174 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
         </div>
       </div>
 
-      {/* 2. Unified Sticky Search & Warehouse Listbox Bar */}
+      {/* 2. Unified Sticky Search & Multi-Filter Listbox Bar */}
       <div
         style={{ top: 'var(--app-header-h, 56px)' }}
-        className="sticky z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 shadow-xs"
+        className="sticky z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 -mx-3 sm:-mx-6 lg:-mx-8 px-3 sm:px-6 lg:px-8 py-2 sm:py-2.5 shadow-xs"
       >
-        <div className="flex flex-col sm:flex-row items-center gap-2 max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto">
+        <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto space-y-2">
           
-          {/* Warehouse Dropdown Listbox */}
-          <div className="w-full sm:w-56 shrink-0 relative">
-            <select
-              value={selectedWh}
-              onChange={(e) => handleSelectWarehouse(e.target.value)}
-              className="w-full h-11 sm:h-12 pl-3.5 pr-8 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer"
-            >
-              <option value="ALL">🏢 전체 창고 (통합)</option>
-              {dynamicWarehouses.map((wh) => (
-                <option key={wh.code} value={wh.code}>
-                  {wh.name} {wh.itemCount ? `(${wh.itemCount}종)` : ''}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
+          {/* Row 1: Search Input + Mobile Filter Toggle + Desktop Reset */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="품목코드, 품목명, 규격, 거래처명 검색..."
+                className="w-full h-10 sm:h-11 pl-9 pr-8 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-md cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
 
-          {/* Unified Search Input */}
-          <div className="relative flex-1 w-full">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="품목코드, 품목명, 규격, 거래처명을 검색하세요..."
-              className="w-full h-11 sm:h-12 pl-10 pr-9 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
-            />
-            {searchTerm && (
+            {/* Mobile Filter Expand/Collapse Button (with active count badge) */}
+            <button
+              type="button"
+              onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+              className={`sm:hidden h-10 px-2.5 rounded-xl border text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer transition-colors ${
+                hasActiveFilters
+                  ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                  : 'bg-slate-50 border-slate-300 text-slate-600 hover:bg-slate-100'
+              }`}
+              title="상세 필터 토글"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span className="text-[11px]">필터</span>
+              {hasActiveFilters && (
+                <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] flex items-center justify-center font-bold">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Reset Filters button on Desktop */}
+            {hasActiveFilters && (
               <button
                 type="button"
-                onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-md cursor-pointer"
+                onClick={handleResetFilters}
+                className="hidden sm:flex h-11 px-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold items-center gap-1 shrink-0 cursor-pointer transition-all"
+                title="모든 필터 초기화"
               >
-                <X className="w-4 h-4" />
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>초기화</span>
               </button>
             )}
           </div>
+
+          {/* Row 2: 4 Listboxes (창고별, 제품분류별, 등급별, 정렬기준) */}
+          {/* Mobile: Ultra-compact 2x2 grid (h-8 text-[11px], only ~68px), Desktop: 4 columns inline */}
+          <div className={`${!isFilterExpanded ? 'hidden sm:grid' : 'grid'} grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2`}>
+            
+            {/* 1. 창고별 (Warehouse) */}
+            <div className="relative">
+              <select
+                value={selectedWh}
+                onChange={(e) => handleSelectWarehouse(e.target.value)}
+                className={`w-full h-8 sm:h-9.5 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
+                  selectedWh !== 'ALL' ? 'border-indigo-400 text-indigo-700 bg-indigo-50/50' : 'border-slate-300 text-slate-800'
+                }`}
+              >
+                <option value="ALL">🏢 전체 창고</option>
+                {dynamicWarehouses.map((wh) => (
+                  <option key={wh.code} value={wh.code}>
+                    {wh.name} {wh.itemCount ? `(${wh.itemCount}종)` : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            {/* 2. 제품분류별 (Category) */}
+            <div className="relative">
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className={`w-full h-8 sm:h-9.5 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
+                  selectedCategory !== 'ALL' ? 'border-indigo-400 text-indigo-700 bg-indigo-50/50' : 'border-slate-300 text-slate-800'
+                }`}
+              >
+                <option value="ALL">📦 전체 분류</option>
+                <option value="완제품">완제품</option>
+                <option value="제작자재">제작자재 (가공/원자재)</option>
+                <option value="소모품">소모품 (부자재)</option>
+                {dynamicCategories
+                  .filter((c) => !['완제품', '제작자재', '소모품'].includes(c))
+                  .map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            {/* 3. 등급별 (Grade) */}
+            <div className="relative">
+              <select
+                value={selectedGrade}
+                onChange={(e) => setSelectedGrade(e.target.value)}
+                className={`w-full h-8 sm:h-9.5 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
+                  selectedGrade !== 'ALL' ? 'border-indigo-400 text-indigo-700 bg-indigo-50/50' : 'border-slate-300 text-slate-800'
+                }`}
+              >
+                <option value="ALL">🏷️ 전체 등급</option>
+                <option value="A등급">⭐ A등급 (핵심/고가)</option>
+                <option value="B등급">🟢 B등급 (주요부품)</option>
+                <option value="C등급">🟡 C등급 (일반부품)</option>
+                <option value="D등급">⚪ D등급 (소모/부자재)</option>
+                <option value="O등급">🔵 O등급 (기타)</option>
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            {/* 4. 정렬기준 (Sort) */}
+            <div className="relative">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className={`w-full h-8 sm:h-9.5 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
+                  sortBy !== 'NAME_ASC' ? 'border-indigo-400 text-indigo-700 bg-indigo-50/50' : 'border-slate-300 text-slate-800'
+                }`}
+              >
+                <option value="NAME_ASC">🔤 품명순 (가나다)</option>
+                <option value="NAME_DESC">🔤 품명 역순 (하파타)</option>
+                <option value="CODE_ASC">🔢 품목코드순</option>
+                <option value="STOCK_DESC">📈 재고 많은순</option>
+                <option value="STOCK_ASC">📉 재고 적은순 (부족)</option>
+                <option value="PRICE_DESC">💰 단가 높은순</option>
+                <option value="PRICE_ASC">🏷️ 단가 낮은순</option>
+                <option value="GRADE_ASC">⭐ 자재등급순 (A→D)</option>
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+          </div>
+
+          {/* Mobile Active Filter Reset Bar */}
+          {hasActiveFilters && (
+            <div className="sm:hidden flex items-center justify-between pt-0.5 px-0.5 text-[11px]">
+              <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
+                필터 {activeFilterCount}개 적용됨
+              </span>
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="text-rose-600 hover:text-rose-700 font-bold text-[11px] flex items-center gap-0.5 cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>필터 초기화</span>
+              </button>
+            </div>
+          )}
 
         </div>
       </div>

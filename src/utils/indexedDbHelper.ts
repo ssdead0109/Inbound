@@ -2,6 +2,7 @@ import { ErpMaterial, ErpUser } from '../api/erpApi';
 import { InboundSlip } from '../types/inbound';
 import { isDummySlip } from './dummyHelper';
 import { matchesMultiKeyword } from './searchHelper';
+import { getMaterialGrade } from './gradeHelper';
 
 const DB_NAME = 'SmartRack_IndexedDB';
 const DB_VERSION = 2;
@@ -167,10 +168,21 @@ export async function searchMaterialsInIndexedDb(
   query: string = '',
   limit: number = 80,
   offset: number = 0,
-  whCode: string = 'ALL'
+  whCode: string = 'ALL',
+  grade: string = 'ALL',
+  category: string = 'ALL',
+  sortBy: string = 'NAME_ASC'
 ): Promise<ErpMaterial[]> {
-  const result = await searchMaterialsInIndexedDbWithTotal(query, limit, offset, whCode);
+  const result = await searchMaterialsInIndexedDbWithTotal(query, limit, offset, whCode, grade, category, sortBy);
   return result.data;
+}
+
+function gradeRank(grade: string): number {
+  if (grade.startsWith('S') || grade.startsWith('A')) return 1;
+  if (grade.startsWith('B')) return 2;
+  if (grade.startsWith('C')) return 3;
+  if (grade.startsWith('D')) return 4;
+  return 5;
 }
 
 /**
@@ -180,13 +192,18 @@ export async function searchMaterialsInIndexedDbWithTotal(
   query: string = '',
   limit: number = 80,
   offset: number = 0,
-  whCode: string = 'ALL'
+  whCode: string = 'ALL',
+  grade: string = 'ALL',
+  category: string = 'ALL',
+  sortBy: string = 'NAME_ASC'
 ): Promise<{ data: ErpMaterial[]; total: number }> {
   const allItems = await getAllMaterialsFromIndexedDb().catch(() => []);
   if (!allItems || allItems.length === 0) return { data: [], total: 0 };
 
   const cleanQ = query.trim().toLowerCase();
   const cleanWh = (whCode || 'ALL').trim();
+  const cleanGrade = (grade || 'ALL').trim();
+  const cleanCat = (category || 'ALL').trim().toLowerCase();
 
   let filtered = allItems;
 
@@ -214,10 +231,74 @@ export async function searchMaterialsInIndexedDbWithTotal(
     );
   }
 
+  // 3. 제품분류 필터링
+  if (cleanCat && cleanCat !== 'all') {
+    filtered = filtered.filter((item) => {
+      const itemCat = String(item.category || '').toLowerCase();
+      const itemName = String(item.name || '').toLowerCase();
+      const itemNotes = String(item.notes || '').toLowerCase();
+
+      if (cleanCat === '완제품') {
+        return itemCat.includes('완제품') || itemCat.includes('제품') || itemName.includes('완제품');
+      }
+      if (cleanCat === '소모품') {
+        return itemCat.includes('소모') || itemCat.includes('부자재') || itemCat.includes('저장품') || itemName.includes('소모');
+      }
+      if (cleanCat === '제작자재') {
+        return itemCat.includes('제작') || itemCat.includes('원자재') || itemCat.includes('가공') || itemCat.includes('자재') || itemName.includes('제작');
+      }
+      return itemCat.includes(cleanCat) || itemName.includes(cleanCat) || itemNotes.includes(cleanCat);
+    });
+  }
+
+  // 4. 등급 필터링
+  if (cleanGrade && cleanGrade !== 'ALL') {
+    filtered = filtered.filter((item) => getMaterialGrade(item) === cleanGrade);
+  }
+
+  // 5. 정렬(SortBy)
+  if (sortBy) {
+    filtered = [...filtered].sort((a, b) => {
+      switch (sortBy) {
+        case 'NAME_DESC':
+          return String(b.name || '').localeCompare(String(a.name || ''), 'ko');
+        case 'CODE_ASC':
+          return String(a.code || '').localeCompare(String(b.code || ''), 'ko');
+        case 'STOCK_DESC':
+          return (Number(b.currentStock) || 0) - (Number(a.currentStock) || 0);
+        case 'STOCK_ASC':
+          return (Number(a.currentStock) || 0) - (Number(b.currentStock) || 0);
+        case 'PRICE_DESC':
+          return (Number(b.unitPrice) || 0) - (Number(a.unitPrice) || 0);
+        case 'PRICE_ASC':
+          return (Number(a.unitPrice) || 0) - (Number(b.unitPrice) || 0);
+        case 'GRADE_ASC':
+          return gradeRank(getMaterialGrade(a)) - gradeRank(getMaterialGrade(b));
+        case 'NAME_ASC':
+        default:
+          return String(a.name || '').localeCompare(String(b.name || ''), 'ko');
+      }
+    });
+  }
+
   return {
     data: filtered.slice(offset, offset + limit),
     total: filtered.length,
   };
+}
+
+/**
+ * 인덱스DB에 저장된 자재 데이터들로부터 고유 제품분류 목록 동적 추출
+ */
+export async function getUniqueCategoriesFromIndexedDb(): Promise<string[]> {
+  const allItems = await getAllMaterialsFromIndexedDb().catch(() => []);
+  const set = new Set<string>();
+  for (const item of allItems) {
+    if (item.category && item.category.trim()) {
+      set.add(item.category.trim());
+    }
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'ko'));
 }
 
 /**
