@@ -308,6 +308,24 @@ export default function App() {
       combined = combined.filter((s) => !isDummySlip(s));
       cleanDummySlipsFromIndexedDb().catch(() => {});
 
+      // 로컬 IndexedDB에 보관된 현장 입고 사진(photos)이 유실되지 않도록 병합 보존
+      try {
+        const cachedSlips = await getSlipsFromIndexedDb('', false);
+        const photoMap = new Map<string, string[]>();
+        for (const cs of cachedSlips) {
+          if (cs.photos && cs.photos.length > 0) {
+            photoMap.set(cs.slipNo, cs.photos);
+          }
+        }
+        for (const s of combined) {
+          if ((!s.photos || s.photos.length === 0) && photoMap.has(s.slipNo)) {
+            s.photos = photoMap.get(s.slipNo);
+          }
+        }
+      } catch {
+        // ignore
+      }
+
       // If ERP data could not be fetched (offline), fallback to clean IndexedDB cached slips
       if (fetchedErpPending.length === 0 && fetchedErpHistory.length === 0 && !isRealDbConnected) {
         try {
@@ -724,6 +742,12 @@ export default function App() {
         showToast(localRes.message || '입고 처리가 완료되었습니다!', 'success');
         resultSlip = localRes.slip;
       }
+
+      // 현장 촬영 사진 보존 및 로컬 IndexedDB에 영구 저장
+      if (receivePayload.photos && receivePayload.photos.length > 0) {
+        resultSlip.photos = receivePayload.photos;
+      }
+      await saveSlipToIndexedDb(resultSlip).catch(() => {});
 
       await loadInitialData();
       navigateToTab('HISTORY', resultSlip);

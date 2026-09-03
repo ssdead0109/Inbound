@@ -145,6 +145,8 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
     }
   };
 
+  const touchStartXRef = useRef<number>(0);
+
   // Register Back Handler: Close photo viewer on smartphone back button
   useEffect(() => {
     if (!photoViewer.isOpen) return;
@@ -154,20 +156,60 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
     });
   }, [photoViewer.isOpen]);
 
-  const handleNextPhoto = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  // Keyboard navigation (ArrowLeft / ArrowRight / Escape)
+  useEffect(() => {
+    if (!photoViewer.isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') {
+        setPhotoViewer((prev) => ({
+          ...prev,
+          currentIndex: (prev.currentIndex + 1) % prev.photos.length,
+        }));
+      } else if (e.key === 'ArrowLeft') {
+        setPhotoViewer((prev) => ({
+          ...prev,
+          currentIndex: (prev.currentIndex - 1 + prev.photos.length) % prev.photos.length,
+        }));
+      } else if (e.key === 'Escape') {
+        closePhotoViewer();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [photoViewer.isOpen]);
+
+  const handleNextPhoto = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setPhotoViewer((prev) => ({
       ...prev,
       currentIndex: (prev.currentIndex + 1) % prev.photos.length,
     }));
   };
 
-  const handlePrevPhoto = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handlePrevPhoto = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setPhotoViewer((prev) => ({
       ...prev,
       currentIndex: (prev.currentIndex - 1 + prev.photos.length) % prev.photos.length,
     }));
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchEndX - touchStartXRef.current;
+    if (Math.abs(diff) > 40) {
+      if (diff < 0) {
+        // Swipe Left -> Next
+        handleNextPhoto();
+      } else {
+        // Swipe Right -> Prev
+        handlePrevPhoto();
+      }
+    }
   };
 
   const historySlips = slips.filter((s) => s.status === 'COMPLETED' || s.status === 'PARTIAL');
@@ -370,11 +412,11 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
                             e.stopPropagation();
                             openPhotoViewer(slip.photos!, slip.slipNo, 0);
                           }}
-                          className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
-                          title="현장 사진 보기"
+                          className="flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-[11px] font-bold transition-all cursor-pointer shadow-xs shadow-indigo-600/30"
+                          title="현장 입고 사진 보기"
                         >
-                          <Camera className="w-3 h-3" />
-                          <span>사진 {slip.photos!.length}장</span>
+                          <Camera className="w-3.5 h-3.5 text-white" />
+                          <span>사진 {slip.photos!.length}장 보기</span>
                         </button>
                       )}
                     </div>
@@ -509,10 +551,18 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
                                   </span>
                                 )}
                                 {hasPhotos && (
-                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-600 text-[10px] font-medium border border-indigo-200/50">
-                                    <Camera className="w-2.5 h-2.5" />
-                                    <span>사진</span>
-                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openPhotoViewer(slip.photos!, slip.slipNo, 0);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold border border-indigo-200 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                                    title="입고 현장 사진 보기"
+                                  >
+                                    <Camera className="w-3 h-3 text-indigo-600" />
+                                    <span>사진 {slip.photos!.length}장 보기</span>
+                                  </button>
                                 )}
                               </div>
 
@@ -692,25 +742,32 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative bg-slate-900 text-white rounded-3xl max-w-3xl w-full p-4 sm:p-5 shadow-2xl space-y-3 overflow-hidden border border-slate-800"
+            className="relative bg-slate-900 text-white rounded-3xl max-w-3xl w-full p-4 sm:p-5 shadow-2xl space-y-3 overflow-hidden border border-slate-800 animate-in zoom-in-95"
           >
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center space-x-2">
-                <Camera className="w-4 h-4 text-indigo-400" />
-                <h3 className="text-sm sm:text-base font-bold text-white">
-                  현장 입고 사진
-                  <span className="text-xs font-normal text-slate-400 ml-2">
-                    ({photoViewer.currentIndex + 1} / {photoViewer.photos.length})
-                  </span>
-                </h3>
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 rounded-xl bg-indigo-600/30 text-indigo-400 border border-indigo-500/30">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
+                    <span>현장 입고 사진</span>
+                    <span className="text-xs font-bold text-indigo-300 bg-indigo-900/80 border border-indigo-500/40 px-2 py-0.5 rounded-full font-mono">
+                      {photoViewer.currentIndex + 1} / {photoViewer.photos.length}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    전체 <strong className="text-indigo-400">{photoViewer.photos.length}장</strong> 중 <strong className="text-white">{photoViewer.currentIndex + 1}번째</strong> 사진 (좌우 버튼 또는 화면을 쓸어넘겨 전환)
+                  </p>
+                </div>
               </div>
 
               <div className="flex items-center space-x-2">
                 <a
                   href={photoViewer.photos[photoViewer.currentIndex]}
                   download={`inbound-${photoViewer.slipNo}-${photoViewer.currentIndex + 1}.jpg`}
-                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
                   title="사진 다운로드"
                 >
                   <Download className="w-4 h-4" />
@@ -718,7 +775,7 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
                 <button
                   type="button"
                   onClick={closePhotoViewer}
-                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer active:scale-95"
                   title="닫기"
                 >
                   <X className="w-5 h-5" />
@@ -726,23 +783,33 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
               </div>
             </div>
 
-            {/* Main Image Stage with Navigation */}
-            <div className="relative w-full max-h-[65vh] min-h-[260px] bg-black/40 rounded-2xl flex items-center justify-center overflow-hidden">
+            {/* Main Image Stage with Touch Swipe & Navigation */}
+            <div
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              className="relative w-full max-h-[65vh] min-h-[280px] bg-black/60 rounded-2xl flex items-center justify-center overflow-hidden touch-pan-y"
+            >
               <img
                 src={photoViewer.photos[photoViewer.currentIndex]}
                 alt={`입고 사진 ${photoViewer.currentIndex + 1}`}
-                className="max-w-full max-h-[65vh] object-contain select-none"
+                className="max-w-full max-h-[65vh] object-contain select-none transition-all duration-200"
               />
+
+              {/* Floating Center-Top Indicator Badge */}
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-slate-900/85 backdrop-blur-md border border-white/20 px-3 py-1 rounded-full text-xs font-mono font-bold text-white shadow-xl pointer-events-none flex items-center gap-1.5">
+                <Camera className="w-3.5 h-3.5 text-indigo-400" />
+                <span>{photoViewer.currentIndex + 1} / {photoViewer.photos.length}</span>
+              </div>
 
               {/* Prev Button */}
               {photoViewer.photos.length > 1 && (
                 <button
                   type="button"
                   onClick={handlePrevPhoto}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-xs border border-white/10 transition-all cursor-pointer shadow-lg"
-                  title="이전 사진"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-slate-900/80 hover:bg-slate-900 text-white backdrop-blur-md border border-white/20 transition-all cursor-pointer shadow-2xl flex items-center justify-center active:scale-95 group"
+                  title="이전 사진 (키보드 ← 또는 왼쪽 스와이프)"
                 >
-                  <ChevronLeft className="w-5 h-5" />
+                  <ChevronLeft className="w-6 h-6 group-hover:-translate-x-0.5 transition-transform" />
                 </button>
               )}
 
@@ -751,35 +818,41 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
                 <button
                   type="button"
                   onClick={handleNextPhoto}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white backdrop-blur-xs border border-white/10 transition-all cursor-pointer shadow-lg"
-                  title="다음 사진"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-slate-900/80 hover:bg-slate-900 text-white backdrop-blur-md border border-white/20 transition-all cursor-pointer shadow-2xl flex items-center justify-center active:scale-95 group"
+                  title="다음 사진 (키보드 → 또는 오른쪽 스와이프)"
                 >
-                  <ChevronRight className="w-5 h-5" />
+                  <ChevronRight className="w-6 h-6 group-hover:translate-x-0.5 transition-transform" />
                 </button>
               )}
             </div>
 
             {/* Footer: Slip Info & Thumbnails Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 text-xs text-slate-400">
-              <div>
-                전표번호: <strong className="font-mono text-indigo-400">{photoViewer.slipNo}</strong>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1 text-xs text-slate-400">
+              <div className="flex items-center gap-2">
+                <span>전표번호: <strong className="font-mono text-indigo-400">{photoViewer.slipNo}</strong></span>
+                <span className="text-slate-600">•</span>
+                <span className="text-slate-300 font-bold">{photoViewer.currentIndex + 1}번째 사진</span>
               </div>
 
-              {/* Small Thumbnails strip */}
+              {/* Thumbnails strip with numbered badges */}
               {photoViewer.photos.length > 1 && (
-                <div className="flex items-center space-x-1.5 overflow-x-auto py-0.5">
+                <div className="flex items-center space-x-2 overflow-x-auto py-1 px-0.5">
                   {photoViewer.photos.map((url, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => setPhotoViewer((prev) => ({ ...prev, currentIndex: idx }))}
-                      className={`relative w-10 h-10 rounded-lg overflow-hidden border-2 transition-all cursor-pointer shrink-0 ${
+                      className={`relative w-11 h-11 rounded-xl overflow-hidden border-2 transition-all cursor-pointer shrink-0 ${
                         photoViewer.currentIndex === idx
-                          ? 'border-indigo-400 scale-105'
-                          : 'border-transparent opacity-60 hover:opacity-100'
+                          ? 'border-indigo-400 scale-105 shadow-md shadow-indigo-500/30 ring-2 ring-indigo-400/50'
+                          : 'border-white/10 opacity-50 hover:opacity-100'
                       }`}
+                      title={`${idx + 1}번째 사진 보기`}
                     >
-                      <img src={url} alt="썸네일" className="w-full h-full object-cover" />
+                      <img src={url} alt={`썸네일 ${idx + 1}`} className="w-full h-full object-cover" />
+                      <span className="absolute bottom-0.5 right-0.5 bg-black/75 text-[9px] font-mono text-white px-1 rounded font-bold">
+                        {idx + 1}
+                      </span>
                     </button>
                   ))}
                 </div>
