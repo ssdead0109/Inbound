@@ -26,6 +26,7 @@ import {
 import { InboundSlip, InboundItem, InboundReceivePayload } from '../../types/inbound';
 import { soundHelper } from '../../utils/soundHelper';
 import { fetchErpStatus } from '../../api/erpApi';
+import { InboundCameraCaptureModal } from './InboundCameraCaptureModal';
 
 interface InboundReceivingViewProps {
   slip: InboundSlip;
@@ -112,6 +113,7 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
   const [defectQtyInput, setDefectQtyInput] = useState<number>(0);
   const [defectReasonInput, setDefectReasonInput] = useState<string>('');
   const [isErpOnline, setIsErpOnline] = useState<boolean>(true);
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -628,22 +630,36 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
             className="hidden"
           />
 
+          {/* Primary: In-App Continuous Camera Capture Modal (Multi-Shot with Next/Retake/Done) */}
+          <button
+            type="button"
+            onClick={() => setIsCameraModalOpen(true)}
+            className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95"
+            title="앱 내에서 확인/재촬영/다음장 연속 촬영"
+          >
+            <Camera className="w-4 h-4" />
+            <span>📸 현장 연속 즉시촬영 (재촬영/다음장 지원)</span>
+          </button>
+
+          {/* Secondary: Gallery Multi-Select */}
           <button
             type="button"
             onClick={() => galleryInputRef.current?.click()}
-            className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+            className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
           >
             <ImageIcon className="w-4 h-4" />
-            <span>📷 사진 여러장 한번에 올리기 (앨범/파일)</span>
+            <span>앨범에서 여러장 올리기</span>
           </button>
 
+          {/* Tertiary: OS Native Camera Fallback */}
           <button
             type="button"
             onClick={() => cameraInputRef.current?.click()}
-            className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 transition-all cursor-pointer shadow-2xs"
+            className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-xl border border-slate-200 transition-all cursor-pointer shadow-2xs"
+            title="스마트폰 기본 카메라 앱 실행"
           >
-            <Camera className="w-4 h-4 text-slate-500" />
-            <span>즉시 촬영</span>
+            <Camera className="w-3.5 h-3.5 text-slate-500" />
+            <span>기본 카메라</span>
           </button>
 
           {isProcessingPhotos && (
@@ -654,8 +670,8 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
           )}
         </div>
 
-        <p className="text-[11px] text-slate-400">
-          💡 [사진 여러장 한번에 올리기] 버튼을 누르면 스마트폰 갤러리에서 여러 장의 현장 사진을 터치하여 한 번에 등록할 수 있습니다.
+        <p className="text-[11px] text-slate-500 flex items-center gap-1">
+          <span>💡 <strong>[현장 연속 즉시촬영]</strong>을 누르면 앱 내에서 찰칵 찍고 <strong>확인/재촬영/다음장 촬영</strong>을 연속으로 진행할 수 있습니다.</span>
         </p>
 
         {/* Photos Thumbnail Grid */}
@@ -836,6 +852,15 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* In-App Multi-Shot Continuous Camera Modal */}
+      <InboundCameraCaptureModal
+        isOpen={isCameraModalOpen}
+        onClose={() => setIsCameraModalOpen(false)}
+        onAddPhotos={(newPhotos) => {
+          setPhotos((prev) => [...prev, ...newPhotos]);
+        }}
+      />
 
     </div>
   );
