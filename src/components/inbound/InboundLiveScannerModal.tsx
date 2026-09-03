@@ -26,6 +26,12 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
   const [hasTorch, setHasTorch] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
 
+  // Multi-lens & Zoom Control State
+  const [availableCameras, setAvailableCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [activeCameraIndex, setActiveCameraIndex] = useState<number>(0);
+  const [hasZoom, setHasZoom] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasScannedRef = useRef(false);
@@ -44,6 +50,7 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
         setIsScanning(false);
         setTorchOn(false);
         setHasTorch(false);
+        setHasZoom(false);
       }
     }
   }, []);
@@ -75,8 +82,52 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
     [onScan, onClose, stopScanner]
   );
 
+  /**
+   * 스마트폰의 여러 렌즈(0.5x 초광각, 1.0x 표준 메인, 망원, 전면) 중
+   * 초광각을 피해 가장 선명한 '표준 메인(1.0x)' 카메라를 지능적으로 찾아냅니다.
+   */
+  const pickMainStandardCameraIndex = (cameras: Array<{ id: string; label: string }>): number => {
+    if (!cameras || cameras.length === 0) return 0;
+    if (cameras.length === 1) return 0;
+
+    // 1. 후면 카메라 인덱스만 추출
+    const backIndices: number[] = [];
+    cameras.forEach((cam, idx) => {
+      const lbl = cam.label.toLowerCase();
+      if (!/front|user|전면|앞|selfie/i.test(lbl)) {
+        backIndices.push(idx);
+      }
+    });
+
+    const candidates = backIndices.length > 0 ? backIndices : cameras.map((_, i) => i);
+    if (candidates.length === 1) return candidates[0];
+
+    // 2. 명시적으로 "main", "primary", "standard", "1x", "기본"이 있는 렌즈
+    const explicitMain = candidates.find((i) =>
+      /main|primary|standard|기본|1x|normal/i.test(cameras[i].label)
+    );
+    if (explicitMain !== undefined) return explicitMain;
+
+    // 3. 초광각(ultra, 0.5, super) 및 망원 제외
+    const nonUltra = candidates.filter((i) =>
+      !/ultra|0\.5|tele|zoom|depth|macro|wide 0/i.test(cameras[i].label)
+    );
+    if (nonUltra.length === 1) return nonUltra[0];
+    if (nonUltra.length >= 2) {
+      // 안드로이드 Galaxy 등에서는 0번이 초광각, 1번이 표준 1x 메인인 경우가 90% 이상
+      return nonUltra[1];
+    }
+
+    // 4. 안드로이드 일반 후면 카메라: 0번(초광각) 대신 1번(표준 1x) 우선 선택
+    if (candidates.length >= 2) {
+      return candidates[1];
+    }
+
+    return candidates[0];
+  };
+
   // Start real-time live camera stream
-  const startScanner = useCallback(async () => {
+  const startScanner = useCallback(async (forcedCameraId?: string) => {
     if (hasScannedRef.current) return;
     setCameraError(null);
 
@@ -114,7 +165,6 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
         await scannerRef.current.stop();
       }
 
-      // Dynamic calculation: 70% of available viewfinder dimension
       const scanConfig = {
         fps: 24, // Optimized frame rate (24 FPS) for fast barcode acquisition
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
@@ -125,20 +175,23 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
         aspectRatio: 1.0,
       };
 
-      // 사용 가능한 카메라 장치 목록 조회하여 후면 카메라 디바이스 ID 우선 바인딩
+      // 2. 전체 카메라 목록 조회 및 '표준 메인(1.0x)' 카메라 선택
       let cameraDeviceSelected: string | { facingMode: string } = { facingMode };
-      if (facingMode === 'environment') {
-        try {
-          const cameras = await Html5Qrcode.getCameras();
-          if (cameras && cameras.length > 0) {
-            const backCam = cameras.find((c) =>
-              /back|rear|environment|후면|뒤/i.test(c.label)
-            );
-            cameraDeviceSelected = backCam ? backCam.id : cameras[cameras.length - 1].id;
+      try {
+        const cameras = await Html5Qrcode.getCameras();
+        if (cameras && cameras.length > 0) {
+          setAvailableCameras(cameras);
+
+          if (forcedCameraId) {
+            cameraDeviceSelected = forcedCameraId;
+          } else {
+            const bestIndex = pickMainStandardCameraIndex(cameras);
+            setActiveCameraIndex(bestIndex);
+            cameraDeviceSelected = cameras[bestIndex].id;
           }
-        } catch (camListErr) {
-          console.warn('[InboundScanner] getCameras fallback to facingMode:', camListErr);
         }
+      } catch (camListErr) {
+        console.warn('[InboundScanner] getCameras fallback to facingMode:', camListErr);
       }
 
       try {
@@ -166,14 +219,18 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
 
       setIsScanning(true);
 
-      // Check for torch capability
+      // 3. 카메라 Capabilities(플래시, 디지털 줌) 확인
       try {
         const capabilities: any = scannerRef.current.getRunningTrackCapabilities?.();
-        if (capabilities && capabilities.torch) {
-          setHasTorch(true);
+        if (capabilities) {
+          setHasTorch(Boolean(capabilities.torch));
+          if (capabilities.zoom && capabilities.zoom.max > 1) {
+            setHasZoom(true);
+          }
         }
       } catch {
         setHasTorch(false);
+        setHasZoom(false);
       }
     } catch (err: any) {
       console.warn('Camera stream error:', err);
@@ -203,6 +260,35 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
       setTorchOn(nextTorch);
     } catch (err) {
       console.warn('Torch toggle failed:', err);
+    }
+  };
+
+  // 렌즈 순환 전환 (1x 표준 ➔ 0.5x 광각 ➔ 망원 등)
+  const handleSwitchNextLens = async () => {
+    if (availableCameras.length <= 1) {
+      await stopScanner();
+      setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
+      return;
+    }
+
+    const nextIndex = (activeCameraIndex + 1) % availableCameras.length;
+    setActiveCameraIndex(nextIndex);
+    await stopScanner();
+    const nextCamId = availableCameras[nextIndex].id;
+    startScanner(nextCamId);
+  };
+
+  // 디지털 줌 토글 (1.0x <-> 2.0x)
+  const handleToggleZoom = async () => {
+    if (!scannerRef.current) return;
+    try {
+      const nextZoom = zoomLevel === 1 ? 2 : 1;
+      await scannerRef.current.applyVideoConstraints({
+        advanced: [{ zoom: nextZoom } as any],
+      });
+      setZoomLevel(nextZoom);
+    } catch (err) {
+      console.warn('Zoom toggle failed:', err);
     }
   };
 
@@ -308,6 +394,14 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
             
             {/* The Live Video Container Element */}
             <div id={VIEWFINDER_ID} className="w-full h-full object-cover"></div>
+            <style>{`
+              #${VIEWFINDER_ID} video {
+                object-fit: cover !important;
+                width: 100% !important;
+                height: 100% !important;
+                border-radius: 1rem;
+              }
+            `}</style>
 
             {/* Viewfinder Target Framing with Dark Mask Overlay */}
             {isScanning && (
@@ -353,12 +447,39 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
               </div>
             )}
 
-            {/* Top Positioning Guide */}
+            {/* Top Quick Action Controls (Lens switcher & Zoom) */}
             {isScanning && !scanSuccess && (
-              <div className="absolute top-3 inset-x-0 text-center pointer-events-none z-10">
-                <span className="bg-slate-950/80 backdrop-blur-xs text-indigo-200 text-[11px] px-3 py-1 rounded-full border border-indigo-500/30 font-semibold shadow-sm">
-                  🎯 QR 코드를 사각형 안에 맞춰주세요
+              <div className="absolute top-2.5 inset-x-2.5 flex items-center justify-between pointer-events-auto z-10">
+                <span className="bg-slate-950/80 backdrop-blur-xs text-indigo-200 text-[10px] px-2.5 py-1 rounded-full border border-indigo-500/30 font-semibold shadow-sm">
+                  🎯 QR을 사각형에 맞추세요
                 </span>
+
+                <div className="flex items-center gap-1.5">
+                  {/* Digital Zoom Toggle */}
+                  {hasZoom && (
+                    <button
+                      type="button"
+                      onClick={handleToggleZoom}
+                      className="bg-slate-950/80 hover:bg-slate-800 text-amber-300 text-[11px] font-black px-2.5 py-1 rounded-full border border-amber-400/40 shadow-sm transition-all active:scale-95 cursor-pointer"
+                      title="화면 확대/축소"
+                    >
+                      {zoomLevel > 1 ? '🔍 2x' : '🔍 1x'}
+                    </button>
+                  )}
+
+                  {/* Multi-Lens Switch Button */}
+                  {availableCameras.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={handleSwitchNextLens}
+                      className="bg-slate-950/85 hover:bg-slate-800 text-emerald-300 text-[11px] font-bold px-2.5 py-1 rounded-full border border-emerald-400/50 shadow-sm transition-all active:scale-95 cursor-pointer flex items-center gap-1"
+                      title="카메라 렌즈 전환 (1x 표준 / 0.5x 광각)"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>{activeCameraIndex === 0 ? '0.5x' : '1x 표준'}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -367,16 +488,6 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950/90 text-slate-300 z-10">
                 <RefreshCw className="w-8 h-8 animate-spin text-indigo-400" />
                 <p className="text-xs font-semibold">카메라를 연결하고 있습니다...</p>
-              </div>
-            )}
-
-            {/* Bottom Status Overlay */}
-            {isScanning && !scanSuccess && (
-              <div className="absolute bottom-2 inset-x-0 text-center pointer-events-none z-10">
-                <span className="bg-slate-900/85 backdrop-blur-xs text-white text-[11px] px-3.5 py-1 rounded-full border border-slate-700 font-medium shadow-xs inline-flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>실시간 자동 스캔 중</span>
-                </span>
               </div>
             )}
           </div>
@@ -399,7 +510,7 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
                 </button>
                 <button
                   type="button"
-                  onClick={startScanner}
+                  onClick={() => startScanner()}
                   className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all border border-slate-700 cursor-pointer flex items-center justify-center gap-1"
                 >
                   <RefreshCw className="w-3 h-3" />
@@ -411,7 +522,7 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
         </div>
 
         {/* Bottom Control Toolbar */}
-        <div className="p-4 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-2">
+        <div className="p-3.5 sm:p-4 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-2">
           
           {/* File Upload / Direct Camera Alternative */}
           <input
@@ -428,7 +539,7 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
             className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-bold text-indigo-300 transition-all cursor-pointer active:scale-95"
           >
             <Camera className="w-4 h-4 text-indigo-400" />
-            <span>카메라 촬영 / 앨범</span>
+            <span>사진/앨범</span>
           </button>
 
           <div className="flex items-center space-x-2">
@@ -448,12 +559,12 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
               </button>
             )}
 
-            {/* Switch Camera (Front/Back) */}
+            {/* Switch Camera Lens */}
             <button
               type="button"
-              onClick={handleToggleFacingMode}
-              className="flex items-center space-x-1 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition-all cursor-pointer active:scale-95"
-              title="전면/후면 카메라 전환"
+              onClick={handleSwitchNextLens}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 transition-all cursor-pointer active:scale-95"
+              title="카메라 렌즈 변경 (1x 표준 / 0.5x 광각)"
             >
               <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
               <span>카메라 전환</span>

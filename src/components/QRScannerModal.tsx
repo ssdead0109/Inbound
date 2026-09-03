@@ -32,6 +32,8 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [availableCameras, setAvailableCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [activeCameraIndex, setActiveCameraIndex] = useState<number>(0);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const readerElementId = 'smartrack-qr-reader';
 
@@ -149,7 +151,42 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     }
   };
 
-  const startScanner = async () => {
+  const pickMainStandardCameraIndex = (cameras: Array<{ id: string; label: string }>): number => {
+    if (!cameras || cameras.length === 0) return 0;
+    if (cameras.length === 1) return 0;
+
+    const backIndices: number[] = [];
+    cameras.forEach((cam, idx) => {
+      const lbl = cam.label.toLowerCase();
+      if (!/front|user|전면|앞|selfie/i.test(lbl)) {
+        backIndices.push(idx);
+      }
+    });
+
+    const candidates = backIndices.length > 0 ? backIndices : cameras.map((_, i) => i);
+    if (candidates.length === 1) return candidates[0];
+
+    const explicitMain = candidates.find((i) =>
+      /main|primary|standard|기본|1x|normal/i.test(cameras[i].label)
+    );
+    if (explicitMain !== undefined) return explicitMain;
+
+    const nonUltra = candidates.filter((i) =>
+      !/ultra|0\.5|tele|zoom|depth|macro|wide 0/i.test(cameras[i].label)
+    );
+    if (nonUltra.length === 1) return nonUltra[0];
+    if (nonUltra.length >= 2) {
+      return nonUltra[1];
+    }
+
+    if (candidates.length >= 2) {
+      return candidates[1];
+    }
+
+    return candidates[0];
+  };
+
+  const startScanner = async (forcedCameraId?: string) => {
     setCameraError(null);
     try {
       // 1. Capacitor 모바일 네이티브 환경인 경우 카메라 권한 사전 확인 및 요청
@@ -186,15 +223,20 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         aspectRatio: 1.0,
       };
 
-      // 2. 사용 가능한 카메라 장치 목록을 조회하여 후면 카메라 디바이스 ID 우선 바인딩
+      // 2. 사용 가능한 카메라 장치 목록을 조회하여 표준 메인(1.0x) 카메라 ID 바인딩
       let cameraDeviceSelected: string | { facingMode: string } = { facingMode: 'environment' };
       try {
         const cameras = await Html5Qrcode.getCameras();
         if (cameras && cameras.length > 0) {
-          const backCam = cameras.find((c) =>
-            /back|rear|environment|후면|뒤/i.test(c.label)
-          );
-          cameraDeviceSelected = backCam ? backCam.id : cameras[cameras.length - 1].id;
+          setAvailableCameras(cameras);
+
+          if (forcedCameraId) {
+            cameraDeviceSelected = forcedCameraId;
+          } else {
+            const bestIndex = pickMainStandardCameraIndex(cameras);
+            setActiveCameraIndex(bestIndex);
+            cameraDeviceSelected = cameras[bestIndex].id;
+          }
         }
       } catch (camListErr) {
         console.warn('[QRScanner] getCameras fallback to facingMode environment:', camListErr);
@@ -228,6 +270,20 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       setCameraError(msg);
       setScanning(false);
     }
+  };
+
+  const handleSwitchNextLens = async () => {
+    if (availableCameras.length <= 1) {
+      await stopScanner();
+      startScanner();
+      return;
+    }
+
+    const nextIndex = (activeCameraIndex + 1) % availableCameras.length;
+    setActiveCameraIndex(nextIndex);
+    await stopScanner();
+    const nextCamId = availableCameras[nextIndex].id;
+    startScanner(nextCamId);
   };
 
   const stopScanner = async () => {
@@ -391,6 +447,14 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         <div className="p-5 space-y-4">
           <div className="relative w-full aspect-square max-h-[300px] bg-black rounded-2xl overflow-hidden border-2 border-slate-700 flex items-center justify-center shadow-inner">
             <div id={readerElementId} className="w-full h-full object-cover"></div>
+            <style>{`
+              #${readerElementId} video {
+                object-fit: cover !important;
+                width: 100% !important;
+                height: 100% !important;
+                border-radius: 1rem;
+              }
+            `}</style>
             
             {/* Viewfinder Target Graphic */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -400,6 +464,21 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                   : 'border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.5)]'
               }`}></div>
             </div>
+
+            {/* Top Quick Actions (Lens Switcher) */}
+            {availableCameras.length > 1 && (
+              <div className="absolute top-2.5 right-2.5 z-10 pointer-events-auto">
+                <button
+                  type="button"
+                  onClick={handleSwitchNextLens}
+                  className="bg-slate-950/85 hover:bg-slate-800 text-emerald-300 text-[11px] font-bold px-2.5 py-1 rounded-full border border-emerald-400/50 shadow-sm transition-all active:scale-95 cursor-pointer flex items-center gap-1"
+                  title="카메라 렌즈 전환 (1x 표준 / 0.5x 광각)"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>{activeCameraIndex === 0 ? '0.5x' : '1x 표준'}</span>
+                </button>
+              </div>
+            )}
 
             {/* Hint Overlay */}
             <div className="absolute bottom-2 inset-x-0 text-center">
