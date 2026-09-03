@@ -140,8 +140,8 @@ export const InboundSlipPrintModal: React.FC<InboundSlipPrintModalProps> = ({
                 </div>
 
                 <div className="p-1.5 bg-white border border-slate-300 rounded-lg shrink-0 flex flex-col items-center">
-                  <QRCodeSVG value={generateInboundQRValue(displaySlip.slipNo)} size={60} level="M" marginSize={2} />
-                  <span className="text-[8px] font-mono text-slate-500 mt-0.5 font-bold">QR 입고검수</span>
+                  <QRCodeSVG value={generateInboundQRValue(displaySlip.slipNo)} size={64} level="M" marginSize={1} />
+                  <span className="text-[9px] font-mono text-slate-700 mt-0.5 font-bold tracking-tight">{`Q:${displaySlip.slipNo}`}</span>
                 </div>
               </div>
 

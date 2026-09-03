@@ -19,6 +19,26 @@ export interface ParsedQrResult {
 export function parseInboundQrCode(rawScannedText: string): ParsedQrResult {
   const text = rawScannedText.trim();
 
+  // 0. PRIORITY 0: Q:[slipNo] 초단축 다이렉트 전표 포맷 (예: Q:20072300020)
+  if (/^q:/i.test(text)) {
+    const slipNo = text.substring(2).trim();
+    return {
+      type: 'SLIP_NO',
+      slipNo,
+      rawText: text,
+    };
+  }
+
+  // SLIP:[slipNo] 포맷 지원
+  if (/^slip:/i.test(text)) {
+    const slipNo = text.substring(5).trim();
+    return {
+      type: 'SLIP_NO',
+      slipNo,
+      rawText: text,
+    };
+  }
+
   // 0. PRIORITY 1: Check if it's a Short URL / Token (e.g. /q/A83K29 or TOKEN:A83K29)
   const token = extractTokenFromScannedText(text);
   if (token) {
