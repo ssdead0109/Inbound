@@ -114,18 +114,10 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
         await scannerRef.current.stop();
       }
 
-      // High-performance 1080p & continuous focus video constraints
-      const videoConstraints: MediaTrackConstraints = {
-        facingMode,
-        width: { ideal: 1920, min: 1280 },
-        height: { ideal: 1080, min: 720 },
-        advanced: [{ focusMode: 'continuous' } as any],
-      };
-
+      // Dynamic calculation: 70% of available viewfinder dimension
       const scanConfig = {
         fps: 24, // Optimized frame rate (24 FPS) for fast barcode acquisition
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          // Dynamic calculation: 70% of available viewfinder dimension
           const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
           const boxEdge = Math.max(200, Math.floor(minEdge * 0.7));
           return { width: boxEdge, height: boxEdge };
@@ -133,9 +125,25 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
         aspectRatio: 1.0,
       };
 
+      // 사용 가능한 카메라 장치 목록 조회하여 후면 카메라 디바이스 ID 우선 바인딩
+      let cameraDeviceSelected: string | { facingMode: string } = { facingMode };
+      if (facingMode === 'environment') {
+        try {
+          const cameras = await Html5Qrcode.getCameras();
+          if (cameras && cameras.length > 0) {
+            const backCam = cameras.find((c) =>
+              /back|rear|environment|후면|뒤/i.test(c.label)
+            );
+            cameraDeviceSelected = backCam ? backCam.id : cameras[cameras.length - 1].id;
+          }
+        } catch (camListErr) {
+          console.warn('[InboundScanner] getCameras fallback to facingMode:', camListErr);
+        }
+      }
+
       try {
         await scannerRef.current.start(
-          videoConstraints,
+          cameraDeviceSelected,
           scanConfig,
           (decodedText) => {
             handleDecoded(decodedText);
@@ -145,7 +153,7 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
           }
         );
       } catch (streamErr) {
-        console.warn('Advanced 1080p video constraints fallback to standard facingMode:', streamErr);
+        console.warn('Camera ID start failed, fallback to generic facingMode:', streamErr);
         await scannerRef.current.start(
           { facingMode },
           scanConfig,
@@ -170,11 +178,15 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
     } catch (err: any) {
       console.warn('Camera stream error:', err);
       setIsScanning(false);
-      let msg = '카메라를 실행할 수 없습니다. 브라우저/앱 설정에서 카메라 접근 권한을 확인해주세요.';
+      let msg = '카메라를 실행할 수 없습니다. 스마트폰 앱 설정에서 카메라 접근 권한을 확인해주세요.';
       if (err?.name === 'NotAllowedError' || err?.message?.includes('Permission denied')) {
-        msg = '카메라 접근 권한이 거부되었습니다. 스마트폰 설정에서 카메라 권한을 허용해주세요.';
+        msg = '카메라 접근 권한이 거부되었습니다. 스마트폰 앱 설정에서 카메라 권한을 허용해주세요.';
       } else if (err?.name === 'NotFoundError') {
         msg = '사용 가능한 카메라 장치를 찾을 수 없습니다.';
+      } else if (err?.name === 'NotReadableError' || err?.name === 'TrackStartError') {
+        msg = '카메라가 다른 앱에서 사용 중이거나 하드웨어 접근이 지연되고 있습니다. 앱을 재실행해주세요.';
+      } else if (err?.message) {
+        msg = `카메라 실행 오류: ${err.message}`;
       }
       setCameraError(msg);
     }

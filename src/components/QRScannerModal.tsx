@@ -4,6 +4,7 @@ import { X, Camera, RefreshCw, Zap, Search, AlertCircle, ArrowRight, CheckCircle
 import { InventoryItem } from '../types/inventory';
 import { decodeItemPayload, parseRackSlotFromScannedText, extractTokenFromScannedText } from '../utils/qrHelper';
 import { resolveQrTokenApi } from '../api/qrApi';
+import { Capacitor } from '@capacitor/core';
 
 interface QRScannerModalProps {
   isOpen: boolean;
@@ -151,6 +152,19 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   const startScanner = async () => {
     setCameraError(null);
     try {
+      // 1. Capacitor 모바일 네이티브 환경인 경우 카메라 권한 사전 확인 및 요청
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const { Camera } = await import('@capacitor/camera');
+          const status = await Camera.checkPermissions();
+          if (status.camera !== 'granted') {
+            await Camera.requestPermissions({ permissions: ['camera'] });
+          }
+        } catch (capErr) {
+          console.warn('[QRScanner] Capacitor camera permission pre-check failed:', capErr);
+        }
+      }
+
       if (!scannerRef.current) {
         scannerRef.current = new Html5Qrcode(readerElementId, {
           formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
@@ -158,13 +172,37 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         });
       }
 
-      await scannerRef.current.start(
-        { facingMode: 'environment' },
-        {
-          fps: 15,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0,
+      if (scannerRef.current.isScanning) {
+        await scannerRef.current.stop();
+      }
+
+      const scanConfig = {
+        fps: 20,
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+          const boxEdge = Math.max(200, Math.floor(minEdge * 0.7));
+          return { width: boxEdge, height: boxEdge };
         },
+        aspectRatio: 1.0,
+      };
+
+      // 2. 사용 가능한 카메라 장치 목록을 조회하여 후면 카메라 디바이스 ID 우선 바인딩
+      let cameraDeviceSelected: string | { facingMode: string } = { facingMode: 'environment' };
+      try {
+        const cameras = await Html5Qrcode.getCameras();
+        if (cameras && cameras.length > 0) {
+          const backCam = cameras.find((c) =>
+            /back|rear|environment|후면|뒤/i.test(c.label)
+          );
+          cameraDeviceSelected = backCam ? backCam.id : cameras[cameras.length - 1].id;
+        }
+      } catch (camListErr) {
+        console.warn('[QRScanner] getCameras fallback to facingMode environment:', camListErr);
+      }
+
+      await scannerRef.current.start(
+        cameraDeviceSelected,
+        scanConfig,
         (decodedText) => {
           handleDetectedCode(decodedText);
         },
@@ -175,9 +213,19 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       setScanning(true);
     } catch (err: any) {
       console.warn('Camera start error:', err);
-      setCameraError(
-        '카메라를 실행할 수 없습니다. 브라우저의 카메라 접근 권한을 허용했는지 확인해주세요.'
-      );
+      let msg = '카메라를 실행할 수 없습니다. 스마트폰 설정에서 카메라 권한을 확인해주세요.';
+      if (err?.name === 'NotAllowedError' || err?.message?.includes('Permission denied')) {
+        msg = '카메라 접근 권한이 차단되었습니다. 스마트폰 앱 설정에서 카메라 권한을 허용해주세요.';
+      } else if (err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError') {
+        msg = '사용 가능한 카메라 장치를 찾을 수 없습니다.';
+      } else if (err?.name === 'NotReadableError' || err?.name === 'TrackStartError') {
+        msg = '카메라가 다른 앱에서 사용 중이거나 하드웨어 접근이 지연되고 있습니다. 앱을 재실행해주세요.';
+      } else if (err?.name === 'OverconstrainedError') {
+        msg = '카메라 해상도 제약 조건 오류입니다. 기본 모드로 다시 시도해주세요.';
+      } else if (err?.message) {
+        msg = `카메라 실행 오류: ${err.message}`;
+      }
+      setCameraError(msg);
       setScanning(false);
     }
   };

@@ -1,10 +1,13 @@
 package com.kcp.smartrack;
 
 import android.os.Bundle;
+import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
+import android.webkit.WebView;
 import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebChromeClient;
 
 public class MainActivity extends BridgeActivity {
     private long lastBackTime = 0;
@@ -12,6 +15,20 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // WebView 카메라 및 미디어 접근 권한 명시적 허용 (HTTPS 원격 서버 WebRTC 카메라 연동)
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            WebView webView = getBridge().getWebView();
+            webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
+            webView.setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
+                @Override
+                public void onPermissionRequest(final PermissionRequest request) {
+                    runOnUiThread(() -> {
+                        request.grant(request.getResources());
+                    });
+                }
+            });
+        }
 
         // Intercept Android hardware back button and swipe gesture
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
