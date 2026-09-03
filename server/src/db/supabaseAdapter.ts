@@ -318,3 +318,68 @@ export async function processInboundReceiveInSupabase(
     return null;
   }
 }
+
+/**
+ * Fetch ERP material masters from Supabase (tb_items with fallback to tb_inbound_items)
+ */
+export async function fetchMaterialsFromSupabase(): Promise<any[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  try {
+    // 1. Try fetching from tb_items
+    const { data: items, error: itemsErr } = await client
+      .from('tb_items')
+      .select('*')
+      .order('code', { ascending: true });
+
+    if (!itemsErr && Array.isArray(items) && items.length > 0) {
+      return items.map((it) => ({
+        code: it.code,
+        name: it.name,
+        spec: it.spec || '',
+        unit: it.unit || 'EA',
+        unitPrice: Number(it.price || 0),
+        safetyStock: Number(it.safety_stock || 0),
+        currentStock: Number(it.quantity || 0),
+        whCode: it.warehouse || '특장자재창고',
+        whName: it.warehouse || '특장자재창고',
+        zone: it.rack_location || 'A-01-01',
+        supplierName: it.supplier || '',
+      }));
+    }
+
+    // 2. Fallback: extract distinct materials from tb_inbound_items
+    const { data: inItems } = await client
+      .from('tb_inbound_items')
+      .select('item_code, item_name, spec, unit, unit_price, warehouse')
+      .limit(500);
+
+    if (Array.isArray(inItems) && inItems.length > 0) {
+      const map = new Map<string, any>();
+      for (const it of inItems) {
+        if (!it.item_code || map.has(it.item_code)) continue;
+        map.set(it.item_code, {
+          code: it.item_code,
+          name: it.item_name,
+          spec: it.spec || '',
+          unit: it.unit || 'EA',
+          unitPrice: Number(it.unit_price || 0),
+          safetyStock: 5,
+          currentStock: 10,
+          whCode: it.warehouse || '특장자재창고',
+          whName: it.warehouse || '특장자재창고',
+          zone: 'A-01-01',
+          supplierName: '',
+        });
+      }
+      return Array.from(map.values());
+    }
+
+    return [];
+  } catch (err) {
+    console.error('[Supabase] Error fetching materials:', err);
+    return [];
+  }
+}
+

@@ -58,9 +58,47 @@ export function initDatabase() {
       saveItemsToDisk();
     }
   } else {
-    console.log(`[DB] Initializing default 5,000 items...`);
     itemsCache = [...INITIAL_ITEMS];
     saveItemsToDisk();
+  }
+
+  // If itemsCache is empty, auto-populate from real ERP inbound slips
+  if (itemsCache.length === 0) {
+    try {
+      const slipsFile = path.join(DATA_DIR, 'inbound_slips.json');
+      if (fs.existsSync(slipsFile)) {
+        const slips = JSON.parse(fs.readFileSync(slipsFile, 'utf-8'));
+        const map = new Map<string, InventoryItem>();
+        for (const s of slips) {
+          if (!Array.isArray(s.items)) continue;
+          for (const it of s.items) {
+            if (!it.itemCode || map.has(it.itemCode)) continue;
+            map.set(it.itemCode, {
+              id: `item-${it.itemCode}`,
+              code: it.itemCode,
+              name: it.itemName,
+              spec: it.spec || '',
+              category: it.itemName.includes('CYLINDER') ? '실린더' : it.itemName.includes('VALVE') ? '밸브' : '일반',
+              warehouse: it.warehouse || '특장자재창고',
+              rackLocation: 'A-01-01',
+              quantity: it.orderQty || 10,
+              unit: it.unit || 'EA',
+              safetyStock: 5,
+              price: it.unitPrice || 0,
+              supplier: s.supplierName || '',
+              notes: s.memo || '',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+        itemsCache = Array.from(map.values());
+        saveItemsToDisk();
+        console.log(`[DB] Auto-populated ${itemsCache.length} real ERP items from inbound slips.`);
+      }
+    } catch (err) {
+      console.warn('[DB] Failed auto-populating items:', err);
+    }
   }
 
   // Load logs

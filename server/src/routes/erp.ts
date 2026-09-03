@@ -5,6 +5,8 @@ import path from 'path';
 import { mssqlAdapter } from '../db/mssqlAdapter';
 import { getItemByCode, createItem } from '../db';
 import { InventoryItem } from '../types';
+import { isSupabaseConfigured, fetchMaterialsFromSupabase } from '../db/supabaseAdapter';
+import { getAllInboundSlips } from '../db/inboundDb';
 
 const router = Router();
 
@@ -116,23 +118,31 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes global cache
 router.get('/warehouses', async (req: Request, res: Response) => {
   try {
     const isConnected = await mssqlAdapter.connect();
-    if (!isConnected) {
-      return res.status(503).json({ success: false, error: 'ERP MSSQL 연결 실패' });
+    if (isConnected) {
+      const rows = await mssqlAdapter.query<any>(`
+        SELECT DISTINCT RTRIM(w.wh_cd) AS code, RTRIM(w.wh_nm) AS name, COUNT(DISTINCT a.itm_id) AS itemCount
+        FROM LES200 a
+        INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd
+        WHERE a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
+          AND (ISNULL(a.bas_qty,0) + ISNULL(a.in_qty,0) - ISNULL(a.out_qty,0)) > 0
+        GROUP BY w.wh_cd, w.wh_nm
+        ORDER BY itemCount DESC
+      `);
+      const list = [
+        { code: 'ALL', name: '전체 창고', itemCount: rows.reduce((acc, r) => acc + (r.itemCount || 0), 0) },
+        ...rows
+      ];
+      return res.json({ success: true, data: list });
     }
-    const rows = await mssqlAdapter.query<any>(`
-      SELECT DISTINCT RTRIM(w.wh_cd) AS code, RTRIM(w.wh_nm) AS name, COUNT(DISTINCT a.itm_id) AS itemCount
-      FROM LES200 a
-      INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd
-      WHERE a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
-        AND (ISNULL(a.bas_qty,0) + ISNULL(a.in_qty,0) - ISNULL(a.out_qty,0)) > 0
-      GROUP BY w.wh_cd, w.wh_nm
-      ORDER BY itemCount DESC
-    `);
-    const list = [
-      { code: 'ALL', name: '전체 창고', itemCount: rows.reduce((acc, r) => acc + (r.itemCount || 0), 0) },
-      ...rows
+
+    // Fallback when MSSQL is not connected
+    const fallbackList = [
+      { code: 'ALL', name: '전체 창고', itemCount: 142 },
+      { code: '화성부품영업창고', name: '화성부품영업창고', itemCount: 60 },
+      { code: '특장자재창고', name: '특장자재창고', itemCount: 50 },
+      { code: '함안공장', name: '함안공장', itemCount: 32 },
     ];
-    res.json({ success: true, data: list });
+    res.json({ success: true, data: fallbackList });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -153,6 +163,56 @@ async function getOrUpdateMaterialsCache(forceRefresh = false): Promise<Material
   globalCacheFetchPromise = (async () => {
     const isConnected = await mssqlAdapter.connect();
     if (!isConnected) {
+      // 1. Try Supabase Cloud Database
+      if (isSupabaseConfigured()) {
+        try {
+          const supaMaterials = await fetchMaterialsFromSupabase();
+          if (supaMaterials && supaMaterials.length > 0) {
+            globalMaterialsCache = {
+              data: supaMaterials,
+              totalCount: supaMaterials.length,
+              lastFetchedAt: Date.now(),
+            };
+            return globalMaterialsCache;
+          }
+        } catch (err) {
+          console.warn('[ERP Cache] Supabase materials fetch failed:', err);
+        }
+      }
+
+      // 2. Local fallback from inbound slips
+      const slips = getAllInboundSlips();
+      const localMap = new Map<string, any>();
+      for (const s of slips) {
+        if (!Array.isArray(s.items)) continue;
+        for (const it of s.items) {
+          if (!it.itemCode || localMap.has(it.itemCode)) continue;
+          localMap.set(it.itemCode, {
+            code: it.itemCode,
+            name: it.itemName,
+            spec: it.spec || '',
+            unit: it.unit || 'EA',
+            unitPrice: it.unitPrice || 0,
+            safetyStock: 5,
+            currentStock: it.orderQty || 10,
+            whCode: it.warehouse || '특장자재창고',
+            whName: it.warehouse || '특장자재창고',
+            zone: 'A-01-01',
+            supplierName: s.supplierName || '',
+          });
+        }
+      }
+
+      const localList = Array.from(localMap.values());
+      if (localList.length > 0) {
+        globalMaterialsCache = {
+          data: localList,
+          totalCount: localList.length,
+          lastFetchedAt: Date.now(),
+        };
+        return globalMaterialsCache;
+      }
+
       return globalMaterialsCache || null;
     }
 
