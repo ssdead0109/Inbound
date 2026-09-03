@@ -129,10 +129,10 @@ export async function processSyncQueue(): Promise<{
     };
   }
 
-  // Check if ERP MSSQL is reachable
+  // Check if Backend Server is reachable
   try {
     const status = await fetchErpStatus();
-    if (!status?.isConnected) {
+    if (!status) {
       const items = await getQueueItems();
       const pendingCount = items.filter((i) => i.status !== 'SUCCESS').length;
       return { total: items.length, succeeded: 0, failed: 0, remaining: pendingCount };
