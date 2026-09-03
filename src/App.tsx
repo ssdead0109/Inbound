@@ -31,6 +31,7 @@ import { ErpMaterialSearchView } from './components/erp/ErpMaterialSearchView';
 import { InboundPurchaseOrderView } from './components/inbound/InboundPurchaseOrderView';
 import { InboundLoginModal } from './components/auth/InboundLoginModal';
 import { ScrollToTopButton } from './components/common/ScrollToTopButton';
+import { PWAInstallBanner } from './components/common/PWAInstallBanner';
 import { ErpUser } from './api/erpApi';
 import {
   saveSlipsToIndexedDb,
@@ -945,6 +946,9 @@ export default function App() {
         onClose={() => setIsSyncQueueOpen(false)}
         onShowToast={showToast}
       />
+
+      {/* PWA Mobile App Installation Prompt Banner */}
+      <PWAInstallBanner />
 
     </div>
   );

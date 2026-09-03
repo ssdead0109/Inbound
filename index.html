@@ -33,5 +33,14 @@
   <body style="background-color: #f8fafc; color: #0f172a; color-scheme: light;" class="bg-slate-50 text-slate-900 antialiased selection:bg-indigo-100 selection:text-indigo-900 min-h-screen">
     <div id="root" style="background-color: #f8fafc; color: #0f172a; color-scheme: light;"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((reg) => console.log('[PWA] ServiceWorker registered:', reg.scope))
+            .catch((err) => console.warn('[PWA] ServiceWorker registration failed:', err));
+        });
+      }
+    </script>
   </body>
 </html>
