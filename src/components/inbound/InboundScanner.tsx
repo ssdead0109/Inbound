@@ -22,7 +22,7 @@ import {
 import { Capacitor } from '@capacitor/core';
 import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { soundHelper } from '../../utils/soundHelper';
-import { parseInboundQrCode, ParsedQrResult } from '../../utils/inboundQrParser';
+import { parseInboundQrCode, resolveInboundQrResult, ParsedQrResult } from '../../utils/inboundQrParser';
 import { InboundSlip } from '../../types/inbound';
 import { InboundLiveScannerModal } from './InboundLiveScannerModal';
 import { scanWithNativeBarcodeScanner } from '../../utils/nativeBarcodeScanner';
@@ -65,12 +65,14 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
 
       try {
         const parsed = parseInboundQrCode(decodedText);
-        onScanSuccess(parsed);
+        // Asynchronously resolve short token into slipNo / itemCode if needed
+        const resolved = await resolveInboundQrResult(parsed);
+        onScanSuccess(resolved);
       } catch (err: any) {
         soundHelper.playErrorBuzzer();
         setCameraError(err.message || 'QR 코드 해석에 실패했습니다.');
       } finally {
-        setTimeout(() => setIsProcessing(false), 800);
+        setTimeout(() => setIsProcessing(false), 500);
       }
     },
     [isProcessing, onScanSuccess]
@@ -181,37 +183,92 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
     }
   };
 
-  // High-speed scan entrypoint: Tries ML Kit on Capacitor native first, then smoothly falls back to InboundLiveScannerModal
+  // Direct Camera File Input change handler (Fallback for mobile web browsers on plain HTTP)
+  const directCameraInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDirectCameraFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsProcessing(true);
+      setCameraError(null);
+
+      const html5Qr = new Html5Qrcode('file-qr-temp', {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        verbose: false,
+      });
+
+      let decodedText: string | null = null;
+      try {
+        decodedText = await html5Qr.scanFile(file, true);
+      } catch {
+        const reader = new FileReader();
+        const dataUrl = await new Promise<string>((resolve) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+        const cropBlob = await createCenterCropBlob(dataUrl);
+        if (cropBlob) {
+          const cropFile = new File([cropBlob], 'crop.jpg', { type: 'image/jpeg' });
+          decodedText = await html5Qr.scanFile(cropFile, true);
+        }
+      }
+
+      if (decodedText) {
+        setIsProcessing(false);
+        soundHelper.playScanBeep();
+        try {
+          const parsed = parseInboundQrCode(decodedText);
+          onScanSuccess(parsed);
+        } catch (err: any) {
+          soundHelper.playErrorBuzzer();
+          setCameraError(err.message || 'QR 코드 해석에 실패했습니다.');
+        }
+      } else {
+        soundHelper.playErrorBuzzer();
+        setCameraError('QR 코드를 감지하지 못했습니다. 조명이 밝은 곳에서 QR 코드가 정면에 오도록 다시 촬영해주세요.');
+      }
+    } catch (err: any) {
+      soundHelper.playErrorBuzzer();
+      setCameraError('사진 처리 중 오류가 발생했습니다: ' + (err.message || ''));
+    } finally {
+      setIsProcessing(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  // High-speed real-time scan entrypoint:
+  // 1) Capacitor Native App: Prioritizes Google ML Kit continuous live camera scan overlay!
+  //    (Zero button clicks: points camera at QR -> beeps -> auto-dismisses).
+  //    Falls back to InboundLiveScannerModal if ML Kit plugin is not available.
+  // 2) Web Browsers (Mobile & PC): Instantly opens InboundLiveScannerModal with continuous video stream!
   const handleStartScan = async () => {
     if (isProcessing) return;
     setCameraError(null);
 
-    // 1. Capacitor 네이티브 앱 환경인 경우 ML Kit 실시간 스캐너 우선 시도
+    // 1. Capacitor Native App Environment
     if (isNativeApp) {
       try {
-        setIsProcessing(true);
-        const res = await scanWithNativeBarcodeScanner();
-        setIsProcessing(false);
-
-        if (res.hasScanned && res.content) {
-          handleScannedText(res.content);
+        const nativeRes = await scanWithNativeBarcodeScanner();
+        if (nativeRes.hasScanned && nativeRes.content) {
+          await handleScannedText(nativeRes.content);
           return;
         }
-
-        if (res.isCancelled) {
+        // User closed or dismissed the scanner
+        if (nativeRes.isCancelled) {
           return;
         }
-
-        if (res.error && !res.error.includes('Fallback')) {
-          setCameraError(res.error);
-        }
-      } catch (err: any) {
-        console.warn('Native ML Kit scanner attempt error:', err);
-        setIsProcessing(false);
+      } catch (err) {
+        console.warn('Native ML Kit scanner error, falling back to LiveScannerModal:', err);
       }
+      // If ML Kit not installed or failed, open real-time LiveScannerModal
+      setIsLiveScannerOpen(true);
+      return;
     }
 
-    // 2. 웹 브라우저 환경이거나 네이티브 ML Kit 부재 시: 실시간 html5-qrcode 라이브 뷰파인더 모달 실행
+    // 2. Web Browser Environment (Mobile & Desktop):
+    // Instantly launch continuous real-time camera viewfinder without requiring manual photo snapping!
     setIsLiveScannerOpen(true);
   };
 
@@ -297,8 +354,16 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
   return (
     <div className="max-w-full sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-3.5 w-full">
       
-      {/* Hidden container for file scan */}
+      {/* Hidden container for file scan & Direct Camera capture input */}
       <div id="file-qr-temp" className="hidden"></div>
+      <input
+        ref={directCameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleDirectCameraFileChange}
+      />
 
       {/* 1. Header Banner */}
       <div className="bg-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md border border-slate-800">

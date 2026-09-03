@@ -1,15 +1,65 @@
 import { InventoryItem } from '../types/inventory';
+import { getCachedQrTokenByTarget, getOrCreateQrTokenApi } from '../api/qrApi';
 
 /**
  * QR Code Error Correction Level 권장 표준
- * - 'M' (15% 복원): 일반 라벨 및 데이터 라벨에 최적의 격자 물리 크기와 복원력 균형 제공
- * - 'L' (7% 복원): 초소형(15mm 이하) 마이크로 라벨에 최적화하여 격자 물리 크기 극대화
+ * - 'M' (15% 복원): 일반 라벨 및 생산현장 표준 (기본 권장값)
+ * - 'Q' (25% 복원): 오염/훼손 가능성이 높은 대형 라벨
+ * - 'L' (7% 복원): 초소형(15mm 이하) 마이크로 라벨
  */
 export const RECOMMENDED_QR_LEVEL = 'M' as const;
+export type QrErrorCorrectionLevel = 'L' | 'M' | 'Q' | 'H';
 
 /**
- * Encodes basic inventory item data into a compact base64 string for QR URLs.
- * Omit empty or default values to minimize QR matrix density, maximizing scan speed and recognition distance.
+ * Build Short QR URL: https://[domain]/q/[token]
+ */
+export function buildShortQrUrl(token: string): string {
+  if (!token) return '';
+  const clean = token.trim();
+  const origin = typeof window !== 'undefined' && window.location.origin
+    ? window.location.origin
+    : '';
+  return `${origin}/q/${clean}`;
+}
+
+/**
+ * Extract token string from URL or raw scanned text
+ * Supports:
+ * - https://erp.company.com/q/A83K29
+ * - /q/A83K29
+ * - ?q=A83K29
+ * - TOKEN:A83K29
+ */
+export function extractTokenFromScannedText(text: string): string | null {
+  if (!text) return null;
+  const t = text.trim();
+
+  // 1. /q/:token pattern in URL or path
+  const pathMatch = t.match(/\/q\/([A-Za-z0-9_-]{4,16})/);
+  if (pathMatch && pathMatch[1]) {
+    return pathMatch[1];
+  }
+
+  // 2. Query param ?q=:token
+  const queryMatch = t.match(/[?&#]q=([A-Za-z0-9_-]{4,16})/);
+  if (queryMatch && queryMatch[1]) {
+    return queryMatch[1];
+  }
+
+  // 3. Prefix TOKEN:A83K29
+  if (t.toUpperCase().startsWith('TOKEN:')) {
+    const rawTok = t.substring(6).trim();
+    if (/^[A-Za-z0-9_-]{4,16}$/.test(rawTok)) {
+      return rawTok;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Encodes basic inventory item data into a compact base64 string for legacy QR URLs.
+ * (Preserved for full backward compatibility)
  */
 export function encodeItemPayload(item: InventoryItem): string {
   try {
@@ -44,6 +94,7 @@ export function encodeItemPayload(item: InventoryItem): string {
 
 /**
  * Decodes compact base64 string back into an InventoryItem
+ * (Preserved for full backward compatibility)
  */
 export function decodeItemPayload(encodedStr: string): InventoryItem | null {
   try {
@@ -76,19 +127,50 @@ export function decodeItemPayload(encodedStr: string): InventoryItem | null {
 }
 
 /**
- * Generates the full universal QR URL for an item.
- * Supports both query parameter (?item=...) and fallback payload (&d=...)
- * Works seamlessly across mobile camera QR scanners, in-app browsers (Kakao, Line, etc.)
+ * Generates QR code value for an item.
+ * Prioritizes Short URL + Token (e.g. https://[domain]/q/K7mP2x9Q) for minimal density and instant scanning!
+ * Fallback to standard URL with legacy query params if offline.
  */
 export function generateItemQRValue(item: InventoryItem): string {
-  const origin = window.location.origin;
-  const pathname = window.location.pathname;
-  const payload = encodeItemPayload(item);
-  
-  if (payload) {
-    return `${origin}${pathname}?item=${encodeURIComponent(item.code)}&d=${payload}`;
+  if (!item) return '';
+  const itemCode = (item.code || item.id || '').trim();
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+
+  // 1. Check if we already have a cached token for this item
+  const cachedToken = getCachedQrTokenByTarget('ITEM', itemCode);
+  if (cachedToken) {
+    return buildShortQrUrl(cachedToken);
   }
-  return `${origin}${pathname}?item=${encodeURIComponent(item.code)}`;
+
+  // 2. Trigger asynchronous server token registration in background
+  if (itemCode) {
+    getOrCreateQrTokenApi('ITEM', itemCode, { name: item.name, spec: item.spec }).catch(() => {});
+  }
+
+  // 3. Generate clean short universal URL
+  return `${origin}/?item=${encodeURIComponent(itemCode)}`;
+}
+
+/**
+ * Generates QR code value for an inbound slip (납품확인서/입고전표)
+ * Format: https://[domain]/q/[token]
+ */
+export function generateInboundQRValue(slipNo: string): string {
+  if (!slipNo) return '';
+  const cleanSlip = slipNo.trim();
+
+  // 1. Check cached token
+  const cachedToken = getCachedQrTokenByTarget('INBOUND', cleanSlip);
+  if (cachedToken) {
+    return buildShortQrUrl(cachedToken);
+  }
+
+  // 2. Background token creation
+  getOrCreateQrTokenApi('INBOUND', cleanSlip).catch(() => {});
+
+  // 3. Universal slip URL fallback
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${origin}/?slipNo=${encodeURIComponent(cleanSlip)}`;
 }
 
 /**
@@ -125,12 +207,20 @@ export function parseItemTargetFromUrl(): {
 }
 
 /**
- * 랙 슬롯 전용 QR 코드 값 생성 (URL 및 RACK: 프로토콜 호환)
+ * 랙 슬롯 전용 QR 코드 값 생성 (Short URL 및 RACK: 프로토콜 호환)
  */
 export function generateRackSlotQRValue(warehouse: string, slotCode: string): string {
+  const targetId = `${warehouse}/${slotCode}`.trim();
+  const cachedToken = getCachedQrTokenByTarget('RACK', targetId);
+  if (cachedToken) {
+    return buildShortQrUrl(cachedToken);
+  }
+
+  // Background registration
+  getOrCreateQrTokenApi('RACK', targetId, { warehouse, slotCode }).catch(() => {});
+
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
-  return `${origin}${pathname}?rack=${encodeURIComponent(slotCode)}&wh=${encodeURIComponent(warehouse)}`;
+  return `${origin}/?rack=${encodeURIComponent(slotCode)}&wh=${encodeURIComponent(warehouse)}`;
 }
 
 /**
@@ -171,3 +261,4 @@ export function parseRackSlotFromScannedText(text: string): { warehouse?: string
 
   return null;
 }
+

@@ -3,113 +3,19 @@ import path from 'path';
 import { InboundSlip, InboundItem, InboundReceivePayload, InboundStats } from '../types/inbound';
 import { getItemByCode, updateItem, createItem, createLog, getAllItems } from '../db';
 import { StockLog } from '../types';
-import { getDummyInboundHistory } from './dummyErpData';
+import { isDummySlip } from '../utils/dummyHelper';
+import {
+  isSupabaseConfigured,
+  fetchSlipsFromSupabase,
+  fetchSlipByNoFromSupabase,
+  upsertSlipToSupabase,
+  processInboundReceiveInSupabase,
+} from './supabaseAdapter';
 
 const DATA_DIR = path.resolve(process.cwd(), 'server/data');
 const INBOUND_FILE = path.join(DATA_DIR, 'inbound_slips.json');
 // Real Inbound Slips Storage (오프라인/더미 모드용 기본 현장 전표 탑재)
-export const INITIAL_INBOUND_SLIPS: InboundSlip[] = [
-  {
-    slipNo: '20080400002',
-    supplierCode: 'SUP-JSB',
-    supplierName: '제이에스비(JSB)',
-    deliveryDate: '2026-09-02',
-    status: 'WAITING',
-    totalItems: 1,
-    totalOrderedQty: 100,
-    totalReceivedQty: 0,
-    totalDefectQty: 0,
-    memo: 'DU-BUSH 정기 납품 건',
-    items: [
-      {
-        id: 'item-demo-01',
-        itemCode: '900060050',
-        itemName: 'DU-BUSH',
-        spec: '60*50',
-        unit: 'EA',
-        orderQty: 100,
-        receivedQty: 100,
-        defectQty: 0,
-        warehouse: '특장자재창고',
-        unitPrice: 4500,
-        status: 'WAITING',
-      },
-    ],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    slipNo: 'DN-20260902-001',
-    supplierCode: 'SUP-KS01',
-    supplierName: '(주)한국정밀센서',
-    deliveryDate: '2026-09-02',
-    status: 'WAITING',
-    totalItems: 2,
-    totalOrderedQty: 450,
-    totalReceivedQty: 0,
-    totalDefectQty: 0,
-    memo: '광학센서 및 베어링 납품 건',
-    items: [
-      {
-        id: 'item-demo-02',
-        itemCode: 'ELEC-SENS-501',
-        itemName: '적외선 광학 거리 센서 모듈',
-        spec: 'VL53L1X ToF 4m Range',
-        unit: 'EA',
-        orderQty: 150,
-        receivedQty: 150,
-        defectQty: 0,
-        warehouse: '특장자재창고',
-        unitPrice: 18500,
-        status: 'WAITING',
-      },
-      {
-        id: 'item-demo-03',
-        itemCode: 'MECH-BEAR-202',
-        itemName: '고속 플랜지 볼베어링',
-        spec: 'F695-2RS 5x13x4mm',
-        unit: 'SET',
-        orderQty: 300,
-        receivedQty: 300,
-        defectQty: 0,
-        warehouse: '화성자재창고',
-        unitPrice: 6200,
-        status: 'WAITING',
-      },
-    ],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    slipNo: 'DN-20260902-002',
-    supplierCode: 'SUP-SHIN',
-    supplierName: '신우정공',
-    deliveryDate: '2026-09-02',
-    status: 'WAITING',
-    totalItems: 1,
-    totalOrderedQty: 25,
-    totalReceivedQty: 0,
-    totalDefectQty: 0,
-    memo: '유압 밸브 납품 건',
-    items: [
-      {
-        id: 'item-demo-04',
-        itemCode: '000573000',
-        itemName: 'S-VALVE',
-        spec: '200*180(COMMON USE)',
-        unit: 'EA',
-        orderQty: 25,
-        receivedQty: 25,
-        defectQty: 0,
-        warehouse: '특장자재창고',
-        unitPrice: 85000,
-        status: 'WAITING',
-      },
-    ],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+export const INITIAL_INBOUND_SLIPS: InboundSlip[] = [];
 
 let inboundCache: InboundSlip[] = [];
 
@@ -124,30 +30,17 @@ export function initInboundDatabase() {
   if (fs.existsSync(INBOUND_FILE)) {
     try {
       const raw = fs.readFileSync(INBOUND_FILE, 'utf-8');
-      inboundCache = JSON.parse(raw);
-      if (inboundCache.length === 0) {
-        inboundCache = [...INITIAL_INBOUND_SLIPS];
-        saveInboundToDisk();
-      }
-
-      // 입고완료 내역이 없는 경우: 더미 완료 이력을 병합하여 입고내역 화면 활성화
-      const hasCompleted = inboundCache.some((s) => s.status === 'COMPLETED');
-      if (!hasCompleted) {
-        const dummyHistory = getDummyInboundHistory();
-        inboundCache = [...dummyHistory, ...inboundCache];
-        saveInboundToDisk();
-        console.log(`[Inbound DB] Added ${dummyHistory.length} completed dummy slips for history view.`);
-      }
-
-      console.log(`[Inbound DB] Loaded ${inboundCache.length} inbound slips from file.`);
+      const parsed = JSON.parse(raw);
+      inboundCache = Array.isArray(parsed) ? parsed.filter((s) => !isDummySlip(s)) : [];
+      saveInboundToDisk();
+      console.log(`[Inbound DB] Loaded ${inboundCache.length} real inbound slips from file.`);
     } catch (err) {
-      console.error('[Inbound DB] Failed reading file, resetting to sample slips:', err);
-      inboundCache = [...INITIAL_INBOUND_SLIPS];
+      console.error('[Inbound DB] Failed reading file, resetting to clean state:', err);
+      inboundCache = [];
       saveInboundToDisk();
     }
   } else {
-    console.log(`[Inbound DB] Initializing with ${INITIAL_INBOUND_SLIPS.length} sample inbound slips...`);
-    inboundCache = [...INITIAL_INBOUND_SLIPS];
+    inboundCache = [];
     saveInboundToDisk();
   }
 }
@@ -162,7 +55,7 @@ export function saveInboundToDisk(): void {
 }
 
 /**
- * ERP 또는 외부에서 조회된 전표를 로컬 캐시 및 디스크에 병합 보존
+ * ERP 또는 외부에서 조회된 전표를 로컬 캐시 및 디스크, Supabase에 병합 보존
  */
 export function upsertInboundSlips(slips: InboundSlip[]): void {
   if (!slips || slips.length === 0) return;
@@ -170,15 +63,49 @@ export function upsertInboundSlips(slips: InboundSlip[]): void {
   for (const s of inboundCache) {
     if (s && s.slipNo) map.set(s.slipNo, s);
   }
+  let hasNew = false;
   for (const s of slips) {
     if (s && s.slipNo) {
-      if (!map.has(s.slipNo)) {
-        map.set(s.slipNo, s);
+      map.set(s.slipNo, s);
+      hasNew = true;
+      if (isSupabaseConfigured()) {
+        upsertSlipToSupabase(s).catch(() => {});
       }
     }
   }
-  inboundCache = Array.from(map.values());
-  saveInboundToDisk();
+  if (hasNew) {
+    inboundCache = Array.from(map.values());
+    saveInboundToDisk();
+  }
+}
+
+/**
+ * Supabase 클라우드 DB가 구성된 경우 Supabase에서 최신 전표 목록을 가져와 로컬 캐시와 병합
+ */
+export async function getInboundSlipsWithSupabaseFallback(filter?: {
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  supplier?: string;
+  query?: string;
+}): Promise<InboundSlip[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supaSlips = await fetchSlipsFromSupabase(filter?.query);
+      if (supaSlips.length > 0) {
+        // Merge into local cache
+        const map = new Map<string, InboundSlip>();
+        for (const s of inboundCache) map.set(s.slipNo, s);
+        for (const s of supaSlips) map.set(s.slipNo, s);
+        inboundCache = Array.from(map.values());
+        saveInboundToDisk();
+        return supaSlips;
+      }
+    } catch (err) {
+      console.warn('[inboundDb] Supabase fetch fallback to local cache:', err);
+    }
+  }
+  return getAllInboundSlips(filter);
 }
 
 // Inbound Slip Queries
@@ -188,10 +115,14 @@ export function getAllInboundSlips(filter?: {
   endDate?: string;
   supplier?: string;
   query?: string;
+  excludeDummy?: boolean;
 }): InboundSlip[] {
   let list = [...inboundCache];
 
   if (filter) {
+    if (filter.excludeDummy) {
+      list = list.filter((s) => !isDummySlip(s));
+    }
     if (filter.status && filter.status !== 'ALL') {
       list = list.filter((s) => s.status === filter.status);
     }
@@ -229,13 +160,35 @@ export function getAllInboundSlips(filter?: {
   return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
-export function getInboundSlipByNo(slipNo: string): InboundSlip | undefined {
+export function getInboundSlipByNo(slipNo: string, excludeDummy = false): InboundSlip | undefined {
   const clean = slipNo.trim().toUpperCase();
-  return inboundCache.find(
+  const found = inboundCache.find(
     (s) =>
       s.slipNo.toUpperCase() === clean ||
       (s.poNumber && s.poNumber.toUpperCase() === clean)
   );
+  if (found && excludeDummy && isDummySlip(found)) {
+    return undefined;
+  }
+  return found;
+}
+
+export async function getInboundSlipByNoAsync(slipNo: string): Promise<InboundSlip | undefined> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supaSlip = await fetchSlipByNoFromSupabase(slipNo);
+      if (supaSlip) {
+        // Upsert into memory cache
+        const idx = inboundCache.findIndex((s) => s.slipNo === supaSlip.slipNo);
+        if (idx >= 0) inboundCache[idx] = supaSlip;
+        else inboundCache.unshift(supaSlip);
+        return supaSlip;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return getInboundSlipByNo(slipNo);
 }
 
 export function createInboundSlip(slip: InboundSlip): InboundSlip {
@@ -389,6 +342,12 @@ export function processInboundReceiving(payload: InboundReceivePayload): {
 
   saveInboundToDisk();
 
+  if (isSupabaseConfigured()) {
+    processInboundReceiveInSupabase(payload).catch((err) => {
+      console.warn('[inboundDb] Supabase receive sync warning:', err);
+    });
+  }
+
   return {
     success: true,
     slip,
@@ -476,9 +435,13 @@ export function getWarehouses(): string[] {
   return DEFAULT_WAREHOUSES;
 }
 
-export function getInboundStats(): InboundStats {
+export function getInboundStats(excludeDummy = false): InboundStats {
   const todayStr = new Date().toISOString().slice(0, 10);
-  const todaySlips = inboundCache.filter((s) => s.deliveryDate === todayStr || (s.inboundDate && s.inboundDate.startsWith(todayStr)));
+  let todaySlips = inboundCache.filter((s) => s.deliveryDate === todayStr || (s.inboundDate && s.inboundDate.startsWith(todayStr)));
+
+  if (excludeDummy) {
+    todaySlips = todaySlips.filter((s) => !isDummySlip(s));
+  }
 
   const completed = todaySlips.filter((s) => s.status === 'COMPLETED').length;
   const pending = todaySlips.filter((s) => s.status === 'WAITING' || s.status === 'INSPECTING').length;

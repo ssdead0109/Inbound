@@ -385,7 +385,7 @@ export async function testDbConnection(
     const latencyMs = Date.now() - startTime;
     const json = await res.json().catch(() => ({}));
 
-    if (json.isConnected) {
+    if (json.isConnected && !json.isDummyMode) {
       return {
         success: true,
         isConnected: true,
@@ -396,7 +396,7 @@ export async function testDbConnection(
         success: false,
         isConnected: false,
         latencyMs,
-        error: json.error || `DB 서버(${cleanDbHost}:${cleanDbPort})에 접속할 수 없습니다.`,
+        error: json.error || `DB 서버(${cleanDbHost}:${cleanDbPort})에 접속할 수 없습니다. (실서버 응답 없음 / 포트 닫힘)`,
       };
     }
   } catch (err: any) {

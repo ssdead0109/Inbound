@@ -1,10 +1,26 @@
+# ==========================================================
+# Render Blueprint Specification (render.yaml)
+# SmartRack ERP Inbound System (Web & Mobile PWA)
+# ==========================================================
 services:
   - type: web
     name: smartrack-inbound
-    env: node
+    runtime: node
     plan: free
+    region: singapore # 한국에서 가장 가까운 싱가포르 리전 권장
     buildCommand: npm install && npm run build
-    startCommand: npm start
+    startCommand: npm run start
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: MSSQL_SERVER
+        value: "192.168.2.209"
+      - key: MSSQL_PORT
+        value: "6611"
+      - key: MSSQL_DATABASE
+        value: "System9"

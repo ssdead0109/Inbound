@@ -21,9 +21,11 @@ import {
   ZoomIn,
   Printer,
   RefreshCw,
-  RotateCcw
+  RotateCcw,
+  WifiOff,
 } from 'lucide-react';
 import { InboundSlip } from '../../types/inbound';
+import { fetchErpStatus } from '../../api/erpApi';
 import { registerBackHandler } from '../../utils/backHandler';
 import { cancelInboundReceipt } from '../../utils/syncQueueHelper';
 import { soundHelper } from '../../utils/soundHelper';
@@ -48,7 +50,14 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
   const [viewMode, setViewMode] = usePersistedState<'BY_SLIP' | 'BY_ITEM'>('filter_history_view_mode', 'BY_SLIP');
   const [collapsedSlips, setCollapsedSlips] = useState<Record<string, boolean>>({});
   const [displayLimit, setDisplayLimit] = useState(50);
+  const [isErpOnline, setIsErpOnline] = useState(true);
   const historySentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetchErpStatus()
+      .then((st) => setIsErpOnline(Boolean(st?.isConnected && !st?.isDummyMode)))
+      .catch(() => setIsErpOnline(false));
+  }, []);
 
   useEffect(() => {
     setDisplayLimit(50);
@@ -300,10 +309,24 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
 
       {/* No Data State */}
       {filteredSlips.length === 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-2 shadow-xs">
-          <History className="w-8 h-8 text-slate-300 mx-auto" />
-          <h3 className="text-sm font-bold text-slate-800">조회된 입고 완료 내역이 없습니다</h3>
-          <p className="text-xs text-slate-500">검색 조건을 변경하거나 신규 입고를 진행해주세요.</p>
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-10 text-center space-y-3 shadow-xs">
+          <div className={`w-12 h-12 rounded-full mx-auto flex items-center justify-center ${
+            !isErpOnline ? 'bg-amber-50 text-amber-500' : 'bg-slate-100 text-slate-400'
+          }`}>
+            {!isErpOnline ? (
+              <WifiOff className="w-6 h-6" />
+            ) : (
+              <History className="w-6 h-6" />
+            )}
+          </div>
+          <h3 className="text-sm sm:text-base font-bold text-slate-800">
+            {!isErpOnline ? '사내 ERP DB 서버가 현재 오프라인 상태입니다' : '조회된 입고 완료 내역이 없습니다'}
+          </h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            {!isErpOnline
+              ? '사내 DB 서버(192.168.2.209:6611)의 전원이 켜져 있는지 확인해주세요. 상단 [서버 설정]에서 실시간 접속 테스트를 실행할 수 있습니다.'
+              : '검색 조건을 변경하거나 신규 입고를 진행해주세요.'}
+          </p>
         </div>
       )}
 

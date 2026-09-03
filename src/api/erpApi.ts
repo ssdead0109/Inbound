@@ -4,6 +4,7 @@ import { getServerBaseUrl } from '../utils/serverConfig';
 
 export interface ErpStatus {
   isConnected: boolean;
+  isDummyMode?: boolean;
   server: string;
   port: number;
   database: string;

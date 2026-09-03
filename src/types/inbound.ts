@@ -33,6 +33,7 @@ export interface InboundSlip {
   inboundDate?: string;       // 입고 확정 일시 (ISO string)
   memo?: string;              // 특이사항 / 메모
   photos?: string[];          // 현장 입고 및 검수 사진 (Base64 data URL)
+  isDummy?: boolean;          // 가상/더미 데이터 여부 (DB 연결 시 필터링)
   items: InboundItem[];       // 품목 목록
   createdAt: string;          // 생성일시
   updatedAt: string;          // 수정일시

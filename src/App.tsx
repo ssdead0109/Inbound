@@ -12,7 +12,8 @@ import {
 } from './types/inbound';
 import * as inboundApi from './api/inbound';
 import * as erpApi from './api/erpApi';
-import { ParsedQrResult } from './utils/inboundQrParser';
+import { ParsedQrResult, resolveInboundQrResult } from './utils/inboundQrParser';
+import { resolveQrTokenApi } from './api/qrApi';
 import { soundHelper } from './utils/soundHelper';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -38,7 +39,9 @@ import {
   getSlipsFromIndexedDb,
   getSlipByNoFromIndexedDb,
   getMaterialByCodeInIndexedDb,
+  cleanDummySlipsFromIndexedDb,
 } from './utils/indexedDbHelper';
+import { isDummySlip } from './utils/dummyHelper';
 import {
   queueInboundReceive,
   processSyncQueue,
@@ -282,7 +285,8 @@ export default function App() {
   const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [fetchedLocal, fetchedErpPending, fetchedErpHistory, fetchedStats, fetchedWh] = await Promise.all([
+      const [erpStatus, fetchedLocal, fetchedErpPending, fetchedErpHistory, fetchedStats, fetchedWh] = await Promise.all([
+        erpApi.fetchErpStatus().catch(() => null),
         inboundApi.fetchInboundSlips().catch(() => []),
         erpApi.fetchErpPendingSlips('', 200).catch(() => []),
         erpApi.fetchErpInboundHistory(300).catch(() => []),
@@ -290,17 +294,23 @@ export default function App() {
         inboundApi.fetchWarehouses().catch(() => []),
       ]);
 
-      const combined = [...fetchedLocal];
+      const isRealDbConnected = Boolean(erpStatus?.isConnected && !erpStatus?.isDummyMode);
+
+      let combined = [...fetchedLocal];
       for (const es of [...fetchedErpPending, ...fetchedErpHistory]) {
         if (!combined.some((s) => s.slipNo === es.slipNo)) {
           combined.push(es);
         }
       }
 
-      // If ERP data could not be fetched (offline), fallback to IndexedDB cached slips!
-      if (fetchedErpPending.length === 0 && fetchedErpHistory.length === 0) {
+      // 더미데이터 완전 배제 & 브라우저 IndexedDB 더미 청소
+      combined = combined.filter((s) => !isDummySlip(s));
+      cleanDummySlipsFromIndexedDb().catch(() => {});
+
+      // If ERP data could not be fetched (offline), fallback to clean IndexedDB cached slips
+      if (fetchedErpPending.length === 0 && fetchedErpHistory.length === 0 && !isRealDbConnected) {
         try {
-          const idbSlips = await getSlipsFromIndexedDb();
+          const idbSlips = await getSlipsFromIndexedDb('', true);
           for (const s of idbSlips) {
             if (!combined.some((c) => c.slipNo === s.slipNo)) {
               combined.push(s);
@@ -310,7 +320,7 @@ export default function App() {
           console.warn('Failed loading from IndexedDB slips cache:', idbErr);
         }
       } else {
-        // Save fetched slips to IndexedDB cache
+        // Save real slips to IndexedDB cache
         saveSlipsToIndexedDb(combined).catch(() => {});
       }
 
@@ -320,7 +330,7 @@ export default function App() {
     } catch (err: any) {
       console.warn('Failed fetching inbound data:', err);
       try {
-        const idbSlips = await getSlipsFromIndexedDb();
+        const idbSlips = await getSlipsFromIndexedDb('', false);
         if (idbSlips.length > 0) {
           setSlips(idbSlips);
         }
@@ -387,12 +397,41 @@ export default function App() {
     };
   }, [loadInitialData, showToast]);
 
-  // Check URL query / hash for deep link
+  // Check URL query / hash / path for deep link and /q/:token Short URLs
   useEffect(() => {
     const handleUrlHash = async () => {
+      const pathname = window.location.pathname;
       const urlParams = new URLSearchParams(window.location.search);
-      const slipParam = urlParams.get('slipNo') || urlParams.get('slip') || window.location.hash.replace('#', '');
+      const hash = window.location.hash;
 
+      // 1. Check for Short URL Token (/q/:token, ?q=:token, #q/:token)
+      let tokenCandidate = urlParams.get('q');
+      if (!tokenCandidate && pathname.includes('/q/')) {
+        const match = pathname.match(/\/q\/([A-Za-z0-9_-]+)/);
+        if (match && match[1]) tokenCandidate = match[1];
+      }
+      if (!tokenCandidate && hash.includes('q/')) {
+        const match = hash.match(/q\/([A-Za-z0-9_-]+)/);
+        if (match && match[1]) tokenCandidate = match[1];
+      }
+
+      if (tokenCandidate) {
+        try {
+          const rec = await resolveQrTokenApi(tokenCandidate);
+          if (rec && rec.type === 'INBOUND' && rec.targetId) {
+            const slip = await inboundApi.fetchInboundSlipByNo(rec.targetId);
+            setActiveSlip(slip);
+            setCurrentTab('RECEIVING');
+            showToast(`QR 전표 [${slip.slipNo}] 연결 완료! 검수를 시작합니다.`, 'success');
+            return;
+          }
+        } catch {
+          // Continue to legacy check
+        }
+      }
+
+      // 2. Legacy query param ?slipNo=... or hash #DN-...
+      const slipParam = urlParams.get('slipNo') || urlParams.get('slip') || hash.replace('#', '');
       if (slipParam && slipParam.startsWith('DN-')) {
         try {
           const slip = await inboundApi.fetchInboundSlipByNo(slipParam);
@@ -433,7 +472,8 @@ export default function App() {
   };
 
   // Handle QR Scan Result (초고속 전표 매칭 및 자동 검수 시작)
-  const handleScanSuccess = async (result: ParsedQrResult) => {
+  const handleScanSuccess = async (rawResult: ParsedQrResult) => {
+    const result = await resolveInboundQrResult(rawResult);
     soundHelper.playScanBeep();
 
     const raw = (result.slipNo || result.rawText || '').trim();

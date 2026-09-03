@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { X, Camera, RefreshCw, Zap, Search, AlertCircle, ArrowRight, CheckCircle2, MapPin, Package, QrCode } from 'lucide-react';
 import { InventoryItem } from '../types/inventory';
-import { decodeItemPayload, parseRackSlotFromScannedText } from '../utils/qrHelper';
+import { decodeItemPayload, parseRackSlotFromScannedText, extractTokenFromScannedText } from '../utils/qrHelper';
+import { resolveQrTokenApi } from '../api/qrApi';
 
 interface QRScannerModalProps {
   isOpen: boolean;
@@ -83,6 +84,23 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       } else {
         setCameraError(`스캔된 코드 [${raw}]은(는) 랙 슬롯 QR 형식이 아닙니다. 슬롯 QR을 비춰주세요.`);
         return;
+      }
+    }
+
+    // Check if it's a Short URL / Token
+    const detectedToken = extractTokenFromScannedText(raw);
+    if (detectedToken) {
+      try {
+        const tokenRec = await resolveQrTokenApi(detectedToken);
+        if (tokenRec) {
+          if (tokenRec.type === 'RACK' && scanMode === 'relocate_workflow' && relocateStep === 2) {
+            raw = tokenRec.targetId; // replace with target rack
+          } else {
+            targetCode = tokenRec.targetId;
+          }
+        }
+      } catch {
+        targetCode = detectedToken;
       }
     }
 

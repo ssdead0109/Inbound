@@ -4,12 +4,15 @@ import path from 'path';
 import fs from 'fs';
 import { initDatabase } from './db';
 import { initInboundDatabase } from './db/inboundDb';
+import { initQrTokenDatabase } from './db/qrTokenDb';
+import { isSupabaseConfigured, getSupabaseClient } from './db/supabaseAdapter';
 import itemsRouter from './routes/items';
 import logsRouter from './routes/logs';
 import stockRouter from './routes/stock';
 import configRouter from './routes/config';
 import inboundRouter from './routes/inbound';
 import erpRouter from './routes/erp';
+import qrRouter from './routes/qr';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -17,6 +20,17 @@ const PORT = process.env.PORT || 5000;
 // Initialize database
 initDatabase();
 initInboundDatabase();
+initQrTokenDatabase();
+
+if (isSupabaseConfigured()) {
+  console.log(`=========================================`);
+  console.log(`🌐 [Database] Supabase Cloud Mode ACTIVE!`);
+  console.log(`📡 URL: ${process.env.SUPABASE_URL}`);
+  console.log(`=========================================`);
+  getSupabaseClient();
+} else {
+  console.log(`[Database] Running in Local / MSSQL Mode.`);
+}
 
 // Middleware
 app.use(cors());
@@ -35,9 +49,25 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+// QR Short URL Route: /q/:token
+app.get('/q/:token', (req, res) => {
+  const { token } = req.params;
+  const host = req.hostname;
+  const clientPort = process.env.CLIENT_PORT || '3000';
+  const distPath = path.resolve(process.cwd(), 'dist');
+
+  // If production build exists, redirect to local SPA query
+  if (fs.existsSync(distPath)) {
+    return res.redirect(`/?q=${encodeURIComponent(token)}`);
+  }
+  // In development, redirect to client vite dev server
+  return res.redirect(`http://${host}:${clientPort}/?q=${encodeURIComponent(token)}`);
+});
+
 // API Routes
 app.use('/api/inbound', inboundRouter);
 app.use('/api/erp', erpRouter);
+app.use('/api/qr', qrRouter);
 app.use('/api/items', itemsRouter);
 app.use('/api/logs', logsRouter);
 app.use('/api/stock', stockRouter);

@@ -179,3 +179,22 @@ BEGIN
     END CATCH
 END
 GO
+
+-- 4. QR 단축 토큰 관리 테이블 (TB_QR_TOKENS)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TB_QR_TOKENS')
+BEGIN
+    CREATE TABLE TB_QR_TOKENS (
+        TOKEN NVARCHAR(20) NOT NULL PRIMARY KEY,              -- 랜덤 영숫자 토큰 (예: A83K29, K7mP2x9Q)
+        QR_TYPE NVARCHAR(30) NOT NULL,                        -- INBOUND, ITEM, RACK, VEHICLE, WORK_ORDER
+        TARGET_ID NVARCHAR(100) NOT NULL,                     -- 대상 ID (전표번호, 품목코드, 랙위치 등)
+        ACTIVE BIT NOT NULL DEFAULT 1,                        -- 활성화 여부
+        METADATA_JSON NVARCHAR(MAX) NULL,                     -- 부가 속성 (JSON)
+        CREATED_AT DATETIME2 NOT NULL DEFAULT GETDATE(),      -- 생성일시
+        UPDATED_AT DATETIME2 NOT NULL DEFAULT GETDATE()       -- 수정일시
+    );
+
+    CREATE UNIQUE INDEX UQ_QR_TOKENS_TARGET ON TB_QR_TOKENS(QR_TYPE, TARGET_ID) WHERE ACTIVE = 1;
+    CREATE INDEX IX_QR_TOKENS_TYPE ON TB_QR_TOKENS(QR_TYPE);
+END
+GO
+

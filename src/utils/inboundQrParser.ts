@@ -1,7 +1,11 @@
 import { InboundSlip, InboundItem } from '../types/inbound';
+import { extractTokenFromScannedText } from './qrHelper';
+import { resolveQrTokenApi, QrType } from '../api/qrApi';
 
 export interface ParsedQrResult {
-  type: 'SLIP_NO' | 'FULL_SLIP_JSON' | 'DELIMITED_SLIP' | 'ITEM_CODE' | 'URL';
+  type: 'SHORT_TOKEN' | 'SLIP_NO' | 'FULL_SLIP_JSON' | 'DELIMITED_SLIP' | 'ITEM_CODE' | 'URL';
+  token?: string;
+  tokenType?: QrType;
   slipNo?: string;
   itemCode?: string;
   directSlipData?: InboundSlip;
@@ -10,9 +14,22 @@ export interface ParsedQrResult {
 
 /**
  * Parses any QR code scanned in the warehouse and determines the payload type.
+ * Prioritizes Short URL / Token (/q/:token) for ultra-fast recognition.
  */
 export function parseInboundQrCode(rawScannedText: string): ParsedQrResult {
   const text = rawScannedText.trim();
+
+  // 0. PRIORITY 1: Check if it's a Short URL / Token (e.g. /q/A83K29 or TOKEN:A83K29)
+  const token = extractTokenFromScannedText(text);
+  if (token) {
+    return {
+      type: 'SHORT_TOKEN',
+      token,
+      rawText: text,
+      // Default guess fallback before server resolution
+      slipNo: token,
+    };
+  }
 
   // 1. Check if it's a JSON string
   if (text.startsWith('{') && text.endsWith('}')) {
@@ -193,3 +210,27 @@ export function parseInboundQrCode(rawScannedText: string): ParsedQrResult {
     rawText: text,
   };
 }
+
+/**
+ * Asynchronously resolves token-based QR results into full business entities.
+ * If the parsed QR is a SHORT_TOKEN, resolves the token via Backend API / local cache.
+ */
+export async function resolveInboundQrResult(parsed: ParsedQrResult): Promise<ParsedQrResult> {
+  if (parsed.type !== 'SHORT_TOKEN' || !parsed.token) {
+    return parsed;
+  }
+
+  try {
+    const record = await resolveQrTokenApi(parsed.token);
+    return {
+      ...parsed,
+      tokenType: record.type,
+      slipNo: record.type === 'INBOUND' ? record.targetId : parsed.slipNo || record.targetId,
+      itemCode: record.type === 'ITEM' ? record.targetId : parsed.itemCode,
+    };
+  } catch (err) {
+    console.warn(`[inboundQrParser] Failed to resolve token ${parsed.token}, fallback to raw target:`, err);
+    return parsed;
+  }
+}
+

@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import {
   getAllInboundSlips,
   getInboundSlipByNo,
+  getInboundSlipsWithSupabaseFallback,
+  getInboundSlipByNoAsync,
   createInboundSlip,
   updateInboundSlipStatus,
   processInboundReceiving,
@@ -29,7 +31,8 @@ router.get('/warehouses', (_req: Request, res: Response) => {
 // GET /api/inbound/stats - 입고 대시보드 통계
 router.get('/stats', (_req: Request, res: Response) => {
   try {
-    const stats = getInboundStats();
+    const isDbConnected = mssqlAdapter.getStatus().isConnected && !mssqlAdapter.isDummyMode;
+    const stats = getInboundStats(isDbConnected);
     res.json({ success: true, data: stats });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -37,10 +40,13 @@ router.get('/stats', (_req: Request, res: Response) => {
 });
 
 // GET /api/inbound/slips - 납품확인서 목록 조회 & 필터
-router.get('/slips', (req: Request, res: Response) => {
+router.get('/slips', async (req: Request, res: Response) => {
   try {
-    const { status, startDate, endDate, supplier, query } = req.query;
-    const slips = getAllInboundSlips({
+    const { status, startDate, endDate, supplier, query, includeDummy } = req.query;
+    const isDbConnected = mssqlAdapter.getStatus().isConnected && !mssqlAdapter.isDummyMode;
+    const excludeDummy = isDbConnected && includeDummy !== 'true';
+
+    const slips = await getInboundSlipsWithSupabaseFallback({
       status: status as string,
       startDate: startDate as string,
       endDate: endDate as string,
@@ -54,10 +60,10 @@ router.get('/slips', (req: Request, res: Response) => {
 });
 
 // GET /api/inbound/slips/:slipNo - 단일 납품확인서 상세 조회 (QR 스캔 시 호출)
-router.get('/slips/:slipNo', (req: Request, res: Response) => {
+router.get('/slips/:slipNo', async (req: Request, res: Response) => {
   try {
     const { slipNo } = req.params;
-    const slip = getInboundSlipByNo(slipNo);
+    const slip = await getInboundSlipByNoAsync(slipNo);
 
     if (!slip) {
       return res.status(404).json({

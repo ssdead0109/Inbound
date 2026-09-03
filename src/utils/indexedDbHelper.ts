@@ -1,5 +1,6 @@
 import { ErpMaterial, ErpUser } from '../api/erpApi';
 import { InboundSlip } from '../types/inbound';
+import { isDummySlip } from './dummyHelper';
 
 const DB_NAME = 'SmartRack_IndexedDB';
 const DB_VERSION = 2;
@@ -294,7 +295,7 @@ export async function saveSlipToIndexedDb(slip: InboundSlip): Promise<void> {
   });
 }
 
-export async function getSlipsFromIndexedDb(query: string = ''): Promise<InboundSlip[]> {
+export async function getSlipsFromIndexedDb(query: string = '', excludeDummy = false): Promise<InboundSlip[]> {
   const db = await openIndexedDb();
   const cleanQ = query.trim().toLowerCase();
 
@@ -315,6 +316,11 @@ export async function getSlipsFromIndexedDb(query: string = ''): Promise<Inbound
       }
 
       const slip: InboundSlip = cursor.value;
+      if (excludeDummy && isDummySlip(slip)) {
+        cursor.continue();
+        return;
+      }
+
       if (!cleanQ) {
         results.push(slip);
       } else {
@@ -331,6 +337,34 @@ export async function getSlipsFromIndexedDb(query: string = ''): Promise<Inbound
       cursor.continue();
     };
 
+    cursorReq.onerror = () => reject(cursorReq.error);
+  });
+}
+
+/**
+ * DB 연결 시 IndexedDB에 남아있던 더미 전표들을 일괄 정리 삭제
+ */
+export async function cleanDummySlipsFromIndexedDb(): Promise<number> {
+  const db = await openIndexedDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_SLIPS], 'readwrite');
+    const store = tx.objectStore(STORE_SLIPS);
+    let deletedCount = 0;
+
+    const cursorReq = store.openCursor();
+    cursorReq.onsuccess = (e) => {
+      const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+      if (!cursor) {
+        resolve(deletedCount);
+        return;
+      }
+      const slip: InboundSlip = cursor.value;
+      if (isDummySlip(slip)) {
+        cursor.delete();
+        deletedCount++;
+      }
+      cursor.continue();
+    };
     cursorReq.onerror = () => reject(cursorReq.error);
   });
 }

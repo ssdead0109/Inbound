@@ -11,10 +11,11 @@ import {
   RefreshCw,
   Tag,
   CheckCircle2,
-  Printer
+  Printer,
+  WifiOff,
 } from 'lucide-react';
 import { InboundSlip } from '../../types/inbound';
-import { fetchErpPendingSlips } from '../../api/erpApi';
+import { fetchErpPendingSlips, fetchErpStatus } from '../../api/erpApi';
 
 interface InboundPendingListProps {
   slips: InboundSlip[];
@@ -37,15 +38,21 @@ export const InboundPendingList: React.FC<InboundPendingListProps> = ({
   // ERP Pending Slips State
   const [erpSlips, setErpSlips] = useState<InboundSlip[]>([]);
   const [isErpLoading, setIsErpLoading] = useState(false);
+  const [isErpOnline, setIsErpOnline] = useState<boolean>(true);
 
   // Load ERP Slips from MSSQL '미입고현황'
   const loadErpSlips = useCallback(async (query?: string) => {
     try {
       setIsErpLoading(true);
-      const data = await fetchErpPendingSlips(query, 60);
+      const [status, data] = await Promise.all([
+        fetchErpStatus().catch(() => null),
+        fetchErpPendingSlips(query, 60).catch(() => []),
+      ]);
+      setIsErpOnline(Boolean(status?.isConnected && !status?.isDummyMode));
       setErpSlips(data);
     } catch (err: any) {
       console.error('Failed to load ERP pending slips:', err);
+      setIsErpOnline(false);
     } finally {
       setIsErpLoading(false);
     }
@@ -189,15 +196,29 @@ export const InboundPendingList: React.FC<InboundPendingListProps> = ({
 
       {/* Slips Cards Grid */}
       {currentDisplayList.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3 shadow-2xs">
-          <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
-            <Boxes className="w-6 h-6" />
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center space-y-3 shadow-2xs">
+          <div className={`w-12 h-12 rounded-full mx-auto flex items-center justify-center ${
+            sourceMode === 'ERP' && !isErpOnline ? 'bg-amber-50 text-amber-500' : 'bg-slate-100 text-slate-400'
+          }`}>
+            {sourceMode === 'ERP' && !isErpOnline ? (
+              <WifiOff className="w-6 h-6" />
+            ) : (
+              <Boxes className="w-6 h-6" />
+            )}
           </div>
-          <h3 className="text-sm font-bold text-slate-800">
-            {sourceMode === 'ERP' ? 'ERP 미입고 전표가 없거나 검색 결과가 없습니다.' : '대기 중인 납품확인서가 없습니다.'}
+          <h3 className="text-sm sm:text-base font-bold text-slate-800">
+            {sourceMode === 'ERP'
+              ? !isErpOnline
+                ? '사내 ERP DB 서버가 현재 오프라인 상태입니다'
+                : 'ERP 미입고 전표가 없거나 검색 결과가 없습니다.'
+              : '대기 중인 납품확인서가 없습니다.'}
           </h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            {sourceMode === 'ERP' ? '검색어를 변경하거나 새로고침 버튼을 눌러보세요.' : '새로운 납품확인서를 카메라로 스캔하여 검수를 시작할 수 있습니다.'}
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            {sourceMode === 'ERP'
+              ? !isErpOnline
+                ? '사내 DB 서버(192.168.2.209:6611)의 전원이 켜져 있는지 확인해주세요. 상단 [서버 설정]에서 실시간 접속 테스트를 실행할 수 있습니다.'
+                : '검색어를 변경하거나 새로고침 버튼을 눌러보세요.'
+              : '새로운 납품확인서를 카메라로 스캔하여 검수를 시작할 수 있습니다.'}
           </p>
         </div>
       ) : (

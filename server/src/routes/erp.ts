@@ -13,17 +13,19 @@ router.get('/status', async (_req: Request, res: Response) => {
   try {
     const isConnected = await mssqlAdapter.connect();
     const status = mssqlAdapter.getStatus();
+    const isRealConnected = Boolean(isConnected && !status.isDummyMode);
     
     let totalCount = 0;
-    if (isConnected) {
-      const countRes = await mssqlAdapter.query<{ total: number }>('SELECT COUNT(*) AS total FROM MT_TC_품목코드');
+    if (isRealConnected) {
+      const countRes = await mssqlAdapter.query<{ total: number }>('SELECT COUNT(*) AS total FROM DMA100').catch(() => []);
       totalCount = countRes[0]?.total || 0;
     }
 
     res.json({
       success: true,
       data: {
-        isConnected,
+        isConnected: isRealConnected,
+        isDummyMode: status.isDummyMode,
         server: status.server,
         port: status.port,
         database: status.database,
@@ -37,6 +39,7 @@ router.get('/status', async (_req: Request, res: Response) => {
       error: err.message,
       data: {
         isConnected: false,
+        isDummyMode: true,
         ...mssqlAdapter.getStatus(),
         totalMaterials: 0,
       },
@@ -61,18 +64,22 @@ router.post('/config', async (req: Request, res: Response) => {
 
     const isConnected = await mssqlAdapter.updateConfig(updates);
     const status = mssqlAdapter.getStatus();
+    const isRealConnected = Boolean(isConnected && !status.isDummyMode);
 
     let totalCount = 0;
-    if (isConnected) {
+    if (isRealConnected) {
       const countRes = await mssqlAdapter.query<{ total: number }>('SELECT COUNT(*) AS total FROM MT_TC_품목코드').catch(() => []);
       totalCount = countRes[0]?.total || 0;
     }
 
     res.json({
-      success: true,
-      isConnected,
+      success: isRealConnected,
+      isConnected: isRealConnected,
+      isDummyMode: status.isDummyMode,
+      error: isRealConnected ? undefined : `사내 MSSQL 서버(${status.server}:${status.port}) 연결 실패 (응답 없음 / 포트 닫힘)`,
       data: {
-        isConnected,
+        isConnected: isRealConnected,
+        isDummyMode: status.isDummyMode,
         server: status.server,
         port: status.port,
         database: status.database,
@@ -84,9 +91,11 @@ router.post('/config', async (req: Request, res: Response) => {
     res.json({
       success: false,
       isConnected: false,
+      isDummyMode: true,
       error: err.message || 'DB 연결 설정 변경 실패',
       data: {
         isConnected: false,
+        isDummyMode: true,
         ...mssqlAdapter.getStatus(),
       },
     });
@@ -151,23 +160,22 @@ async function getOrUpdateMaterialsCache(forceRefresh = false): Promise<Material
       const sql = `
         WITH StockCTE AS (
           SELECT 
-            m.itm_cd,
+            a.itm_id,
             RTRIM(a.wh_cd) AS whCode,
             RTRIM(w.wh_nm) AS whName,
             SUM(ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) AS currentStock
           FROM LES200 a
-          INNER JOIN DMA100 m ON m.itm_id = a.itm_id
           INNER JOIN BCW100 w ON w.wh_cd = a.wh_cd
           WHERE a.sum_mon = (CAST(DATEPART(year, GETDATE()) AS CHAR(4)) + '-00')
             AND (ISNULL(a.bas_qty, 0) + ISNULL(a.in_qty, 0) - ISNULL(a.out_qty, 0)) > 0
-          GROUP BY m.itm_cd, a.wh_cd, w.wh_nm
+          GROUP BY a.itm_id, a.wh_cd, w.wh_nm
         )
-        SELECT TOP (15000)
-          RTRIM(P.품목코드) AS code,
-          RTRIM(P.품목명) AS name,
-          RTRIM(P.규격) AS spec,
-          RTRIM(P.최소단위) AS unit,
-          ISNULL(P.입고단가, 0) AS unitPrice,
+        SELECT
+          RTRIM(m.itm_cd) AS code,
+          RTRIM(m.itm_nm) AS name,
+          RTRIM(ISNULL(m.spec, '')) AS spec,
+          RTRIM(ISNULL(P.최소단위, ISNULL(m.um_bc, 'EA'))) AS unit,
+          ISNULL(P.입고단가, ISNULL(m.sale_price, 0)) AS unitPrice,
           ISNULL(P.안전재고, 0) AS safetyStock,
           ISNULL(P.기초재고, 0) AS basicStock,
           RTRIM(ISNULL(P.구역코드, '')) AS zone,
@@ -176,13 +184,14 @@ async function getOrUpdateMaterialsCache(forceRefresh = false): Promise<Material
           RTRIM(ISNULL(C.거래처명, '')) AS supplierName,
           RTRIM(ISNULL(P.특이사항, '')) AS notes,
           ISNULL(P.수정일, '') AS updatedAt,
-          ISNULL(S.whCode, '') AS whCode,
-          ISNULL(S.whName, '') AS whName,
-          ISNULL(S.currentStock, 0) AS currentStock
-        FROM MT_TC_품목코드 P
+          S.whCode,
+          S.whName,
+          S.currentStock
+        FROM StockCTE S
+        INNER JOIN DMA100 m ON m.itm_id = S.itm_id
+        LEFT JOIN MT_TC_품목코드 P ON P.품목코드 = m.itm_cd
         LEFT JOIN MT_TC_거래처코드 C ON P.거래처코드 = C.거래처코드
-        LEFT JOIN StockCTE S ON S.itm_cd = P.품목코드
-        ORDER BY S.currentStock DESC, P.수정일 DESC, P.품목코드 ASC
+        ORDER BY S.whCode ASC, S.currentStock DESC
       `;
 
       const items = await mssqlAdapter.query<any>(sql);

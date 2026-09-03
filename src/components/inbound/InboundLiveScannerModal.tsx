@@ -20,6 +20,7 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
   onScan,
 }) => {
   const [isScanning, setIsScanning] = useState(false);
+  const [scanSuccess, setScanSuccess] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [hasTorch, setHasTorch] = useState(false);
@@ -47,7 +48,7 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
     }
   }, []);
 
-  // Handle successful code detection -> Beep, Haptic, Close modal, Launch inspection
+  // Handle successful code detection -> Beep, Haptic, Visual feedback, Close modal, Launch inspection
   const handleDecoded = useCallback(
     async (decodedText: string) => {
       if (hasScannedRef.current) return;
@@ -56,17 +57,20 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
       const clean = decodedText.trim();
       if (!clean) return;
 
+      setScanSuccess(true);
       soundHelper.playScanBeep();
       if (navigator.vibrate) {
         navigator.vibrate([100, 50, 100]);
       }
 
-      await stopScanner();
-      onClose();
-
-      setTimeout(() => {
-        onScan(clean);
-      }, 50);
+      // 120ms instant visual feedback, then immediate stop and callback
+      setTimeout(async () => {
+        await stopScanner();
+        onClose();
+        setTimeout(() => {
+          onScan(clean);
+        }, 30);
+      }, 120);
     },
     [onScan, onClose, stopScanner]
   );
@@ -222,13 +226,14 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
     }
   };
 
-  // Mount/Unmount logic: waits 300ms for modal DOM to finish mounting with non-zero dimensions
+  // Mount/Unmount logic: starts rear-camera instantly with zero redundant delay
   useEffect(() => {
     if (isOpen) {
       hasScannedRef.current = false;
+      setScanSuccess(false);
       const timer = setTimeout(() => {
         startScanner();
-      }, 300);
+      }, 60);
       return () => {
         clearTimeout(timer);
         stopScanner();
@@ -251,22 +256,26 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-fade-in">
+    <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-fade-in">
       <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl flex flex-col text-white">
         
         {/* Header */}
-        <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shrink-0">
+            <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition-all ${
+              scanSuccess
+                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                : 'bg-indigo-600/30 border-indigo-500/40 text-indigo-400'
+            }`}>
               <Camera className="w-5 h-5" />
             </div>
             <div>
               <h3 className="font-bold text-sm sm:text-base text-white flex items-center gap-1.5">
-                <span>QR 코드 실시간 스캔</span>
-                {isScanning && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />}
+                <span>입고확인 QR 실시간 스캔</span>
+                {isScanning && !scanSuccess && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />}
               </h3>
               <p className="text-[11px] text-slate-400 font-normal">
-                QR을 비추면 자동으로 인식되어 검수가 시작됩니다
+                {scanSuccess ? '✓ QR 인식 완료! 검수창으로 이동합니다...' : 'QR을 프레임 안에 맞추면 즉시 자동 인식됩니다'}
               </p>
             </div>
           </div>
@@ -275,31 +284,69 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
             type="button"
             onClick={onClose}
             className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-all cursor-pointer"
+            title="닫기"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Real-time Video Viewfinder */}
-        <div className="p-4 sm:p-5 space-y-3">
-          <div className="relative w-full aspect-square max-h-[320px] bg-black rounded-2xl overflow-hidden border-2 border-slate-700 flex items-center justify-center shadow-inner">
+        <div className="p-3 sm:p-4 space-y-2">
+          <div className="relative w-full aspect-square max-h-[340px] bg-black rounded-2xl overflow-hidden border-2 border-slate-700 flex items-center justify-center shadow-inner">
             
             {/* The Live Video Container Element */}
             <div id={VIEWFINDER_ID} className="w-full h-full object-cover"></div>
 
-            {/* Targeting Box Graphic & Moving Laser Line */}
+            {/* Viewfinder Target Framing with Dark Mask Overlay */}
             {isScanning && (
-              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                <div className="w-52 h-52 sm:w-60 sm:h-60 rounded-2xl border-2 border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.5)] overflow-hidden relative">
-                  {/* 4 Corner Accents */}
-                  <div className="absolute top-0 left-0 w-5 h-5 border-t-4 border-l-4 border-indigo-400" />
-                  <div className="absolute top-0 right-0 w-5 h-5 border-t-4 border-r-4 border-indigo-400" />
-                  <div className="absolute bottom-0 left-0 w-5 h-5 border-b-4 border-l-4 border-indigo-400" />
-                  <div className="absolute bottom-0 right-0 w-5 h-5 border-b-4 border-r-4 border-indigo-400" />
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden">
+                {/* Central Targeting Box with 68% viewport ratio & Dark surrounding mask */}
+                <div
+                  className={`w-[240px] h-[240px] sm:w-[270px] sm:h-[270px] rounded-2xl border-2 relative transition-all duration-150 ${
+                    scanSuccess
+                      ? 'border-emerald-400 shadow-[0_0_30px_rgba(52,211,153,0.95)] scale-102 bg-emerald-500/10'
+                      : 'border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.5)]'
+                  }`}
+                  style={{
+                    boxShadow: scanSuccess
+                      ? '0 0 35px rgba(52,211,153,0.95), 0 0 0 9999px rgba(2, 6, 23, 0.65)'
+                      : '0 0 15px rgba(99,102,241,0.5), 0 0 0 9999px rgba(2, 6, 23, 0.60)',
+                  }}
+                >
+                  {/* 4 Corner L-Bracket Accents */}
+                  <div className={`absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 rounded-tl-lg transition-colors ${scanSuccess ? 'border-emerald-300' : 'border-indigo-400'}`} />
+                  <div className={`absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 rounded-tr-lg transition-colors ${scanSuccess ? 'border-emerald-300' : 'border-indigo-400'}`} />
+                  <div className={`absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 rounded-bl-lg transition-colors ${scanSuccess ? 'border-emerald-300' : 'border-indigo-400'}`} />
+                  <div className={`absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 rounded-br-lg transition-colors ${scanSuccess ? 'border-emerald-300' : 'border-indigo-400'}`} />
                   
-                  {/* Animated Red Laser Scan Line */}
-                  <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-rose-500 to-transparent shadow-[0_0_12px_rgba(244,63,94,0.9)] animate-scan-line" />
+                  {/* Animated Red Laser Scan Line (while scanning) */}
+                  {!scanSuccess && (
+                    <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-rose-500 to-transparent shadow-[0_0_12px_rgba(244,63,94,0.9)] animate-scan-line" />
+                  )}
+
+                  {/* Scan Success Visual Badge */}
+                  {scanSuccess && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 animate-in zoom-in-90 duration-100">
+                      <div className="w-12 h-12 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/50">
+                        <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <span className="bg-emerald-500 text-slate-950 font-black text-xs px-3 py-1 rounded-full shadow-md">
+                        ✓ 인식 완료!
+                      </span>
+                    </div>
+                  )}
                 </div>
+              </div>
+            )}
+
+            {/* Top Positioning Guide */}
+            {isScanning && !scanSuccess && (
+              <div className="absolute top-3 inset-x-0 text-center pointer-events-none z-10">
+                <span className="bg-slate-950/80 backdrop-blur-xs text-indigo-200 text-[11px] px-3 py-1 rounded-full border border-indigo-500/30 font-semibold shadow-sm">
+                  🎯 QR 코드를 사각형 안에 맞춰주세요
+                </span>
               </div>
             )}
 
@@ -311,11 +358,12 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
               </div>
             )}
 
-            {/* Bottom Hint Overlay */}
-            {isScanning && (
-              <div className="absolute bottom-2 inset-x-0 text-center pointer-events-none">
-                <span className="bg-slate-900/80 backdrop-blur-xs text-white text-[11px] px-3 py-1 rounded-full border border-slate-700 font-medium shadow-xs">
-                  ⚡ QR 코드를 사각형 안에 비추면 즉시 인식됩니다
+            {/* Bottom Status Overlay */}
+            {isScanning && !scanSuccess && (
+              <div className="absolute bottom-2 inset-x-0 text-center pointer-events-none z-10">
+                <span className="bg-slate-900/85 backdrop-blur-xs text-white text-[11px] px-3.5 py-1 rounded-full border border-slate-700 font-medium shadow-xs inline-flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>실시간 자동 스캔 중</span>
                 </span>
               </div>
             )}
@@ -328,21 +376,22 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
                 <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
                 <span className="font-semibold">{cameraError}</span>
               </div>
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={startScanner}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>카메라 재시작</span>
-                </button>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold transition-all border border-slate-700 cursor-pointer"
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
                 >
-                  사진 선택
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>📷 스마트폰 기본 카메라로 촬영하기</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={startScanner}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all border border-slate-700 cursor-pointer flex items-center justify-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>다시 시도</span>
                 </button>
               </div>
             </div>
@@ -352,21 +401,22 @@ export const InboundLiveScannerModal: React.FC<InboundLiveScannerModalProps> = (
         {/* Bottom Control Toolbar */}
         <div className="p-4 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-2">
           
-          {/* File Upload Alternative */}
+          {/* File Upload / Direct Camera Alternative */}
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            capture="environment"
             className="hidden"
             onChange={handleFileChange}
           />
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition-all cursor-pointer active:scale-95"
+            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-bold text-indigo-300 transition-all cursor-pointer active:scale-95"
           >
-            <ImageIcon className="w-4 h-4 text-slate-400" />
-            <span>사진/앨범 선택</span>
+            <Camera className="w-4 h-4 text-indigo-400" />
+            <span>카메라 촬영 / 앨범</span>
           </button>
 
           <div className="flex items-center space-x-2">

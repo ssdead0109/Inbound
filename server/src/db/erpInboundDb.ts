@@ -236,7 +236,9 @@ export async function getErpPendingSlips(query?: string, limit: number = 50): Pr
   }
 
   // 4단계: DB에 전표가 없으면 로컬 캐시에서 반환
-  const diskCached = getAllInboundSlips({ query });
+  // DB가 연결된 상태면 더미데이터는 일체 반환하지 않고 실제 로컬 전표만 반환
+  const isRealDb = mssqlAdapter.getStatus().isConnected && !mssqlAdapter.isDummyMode;
+  const diskCached = getAllInboundSlips({ query, excludeDummy: isRealDb });
   return diskCached.filter((s) => s.status === 'WAITING' || s.status === 'INSPECTING' || s.status === 'HOLD');
 }
 
@@ -869,16 +871,7 @@ export async function getErpInboundHistory(limit: number = 100): Promise<Inbound
     return results;
   }
 
-  // 더미 모드 또는 레코드 부재 시: 현실적인 가상 입고 완료 이력 반환
-  const { getDummyInboundHistory } = await import('./dummyErpData');
-  const dummyHistory = getDummyInboundHistory();
+  // 실제 로컬 및 사내 처리 완료 전표만 반환
   const localCompleted = getAllInboundSlips({ status: 'COMPLETED' });
-  const map = new Map<string, InboundSlip>();
-  for (const s of [...dummyHistory, ...localCompleted]) {
-    if (s.slipNo && !map.has(s.slipNo)) {
-      map.set(s.slipNo, s);
-    }
-  }
-
-  return Array.from(map.values()).slice(0, limit);
+  return localCompleted.slice(0, limit);
 }

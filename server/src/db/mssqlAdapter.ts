@@ -85,12 +85,12 @@ export class MssqlAdapter {
       console.log(`[MSSQL] ✅ Connected successfully to ${this.config.database}!`);
       return true;
     } catch (err: any) {
-      console.warn(`[MSSQL] ⚡ 사내 서버(${this.config.server}:${this.config.port}) 직접 연결 불가: 가상 더미 DB 모드로 자동 전환하여 정상 가동합니다.`);
-      this.isConnected = true;
+      console.warn(`[MSSQL] ⚡ 사내 서버(${this.config.server}:${this.config.port}) 직접 연결 불가: ${err.message || '응답 없음'}`);
+      this.isConnected = false;
       this.isDummyMode = true;
-      this.lastConnectFailed = false;
+      this.lastConnectFailed = true;
       this.pool = null;
-      return true;
+      return false;
     }
   }
 
