@@ -85,6 +85,24 @@ const API_BASE = {
   toString: () => `${getServerBaseUrl()}/api/erp`,
 };
 
+/**
+ * HTML 반환 시 Unexpected token < 방어 및 안전한 JSON 파싱 헬퍼
+ */
+export async function safeJsonParse(res: Response): Promise<any> {
+  const text = await res.text();
+  const trimmed = text.trim();
+  if (trimmed.startsWith('<')) {
+    throw new Error(
+      '서버에서 API 응답(JSON) 대신 웹페이지(HTML)를 반환했습니다. 스마트폰 앱의 [서버 주소 설정]에 올바른 Render 서버 주소(https://...onrender.com)가 입력되어 있는지 확인해주세요.'
+    );
+  }
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    throw new Error(`서버 응답 파싱 실패: ${trimmed.slice(0, 80)}`);
+  }
+}
+
 export interface ErpSyncResult {
   success: boolean;
   isIncremental: boolean;
@@ -98,7 +116,7 @@ export interface ErpSyncResult {
 export async function fetchErpStatus(): Promise<ErpStatus> {
   const res = await fetch(`${API_BASE}/status`);
   if (!res.ok) throw new Error('ERP 상태 조회 실패');
-  const json = await res.json();
+  const json = await safeJsonParse(res);
   return json.data;
 }
 
@@ -286,7 +304,7 @@ export async function loginErpUser(code: string, password?: string): Promise<Erp
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code, password }),
   });
-  const json = await res.json();
+  const json = await safeJsonParse(res);
   if (!res.ok || !json.success) {
     throw new Error(json.message || '로그인에 실패했습니다.');
   }

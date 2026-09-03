@@ -1,5 +1,6 @@
 import { InboundSlip, InboundReceivePayload, InboundStats } from '../types/inbound';
 import { getServerBaseUrl } from '../utils/serverConfig';
+import { safeJsonParse } from './erpApi';
 
 // 동적 API Base URL
 const API_BASE = {
@@ -9,14 +10,14 @@ const API_BASE = {
 export async function fetchWarehouses(): Promise<string[]> {
   const res = await fetch(`${API_BASE}/warehouses`);
   if (!res.ok) throw new Error('창고 목록 조회 실패');
-  const json = await res.json();
+  const json = await safeJsonParse(res);
   return json.data || [];
 }
 
 export async function fetchInboundStats(): Promise<InboundStats> {
   const res = await fetch(`${API_BASE}/stats`);
   if (!res.ok) throw new Error('입고 통계 조회 실패');
-  const json = await res.json();
+  const json = await safeJsonParse(res);
   return json.data;
 }
 
@@ -37,17 +38,17 @@ export async function fetchInboundSlips(params?: {
   const url = `${API_BASE}/slips${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error('납품확인서 목록 조회 실패');
-  const json = await res.json();
+  const json = await safeJsonParse(res);
   return json.data;
 }
 
 export async function fetchInboundSlipByNo(slipNo: string): Promise<InboundSlip> {
   const res = await fetch(`${API_BASE}/slips/${encodeURIComponent(slipNo)}`);
   if (!res.ok) {
-    const errorJson = await res.json().catch(() => ({}));
+    const errorJson = await safeJsonParse(res).catch(() => ({}));
     throw new Error(errorJson.message || `납품확인서 [${slipNo}]를 찾을 수 없습니다.`);
   }
-  const json = await res.json();
+  const json = await safeJsonParse(res);
   return json.data;
 }
 

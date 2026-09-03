@@ -19,6 +19,7 @@ import {
   CachedAuthUser
 } from '../../utils/indexedDbHelper';
 import { getServerBaseUrl, setCustomServerUrl } from '../../utils/serverConfig';
+import { Capacitor } from '@capacitor/core';
 
 interface InboundLoginModalProps {
   onLoginSuccess: (user: ErpUser) => void;
@@ -67,6 +68,10 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
   useEffect(() => {
     checkStatus();
     const timer = setInterval(checkStatus, 15000);
+    // 모바일 앱 환경에서 서버 URL이 아직 설정되지 않았으면 자동으로 설정창 오픈
+    if (Capacitor.isNativePlatform() && !getServerBaseUrl()) {
+      setShowServerSetting(true);
+    }
     return () => clearInterval(timer);
   }, []);
 
