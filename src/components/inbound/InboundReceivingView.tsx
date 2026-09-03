@@ -115,7 +115,6 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
   const [isErpOnline, setIsErpOnline] = useState<boolean>(true);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
 
-  const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -621,24 +620,15 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
             onChange={handlePhotoUpload}
             className="hidden"
           />
-          <input
-            ref={cameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={handlePhotoUpload}
-            className="hidden"
-          />
 
-          {/* Primary: In-App Continuous Camera Capture Modal (Multi-Shot with Next/Retake/Done) */}
+          {/* Primary: In-App Continuous Camera Capture Modal */}
           <button
             type="button"
             onClick={() => setIsCameraModalOpen(true)}
             className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95"
-            title="앱 내에서 확인/재촬영/다음장 연속 촬영"
           >
             <Camera className="w-4 h-4" />
-            <span>📸 현장 연속 즉시촬영 (재촬영/다음장 지원)</span>
+            <span>촬영하기</span>
           </button>
 
           {/* Secondary: Gallery Multi-Select */}
@@ -648,18 +638,7 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
             className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
           >
             <ImageIcon className="w-4 h-4" />
-            <span>앨범에서 여러장 올리기</span>
-          </button>
-
-          {/* Tertiary: OS Native Camera Fallback */}
-          <button
-            type="button"
-            onClick={() => cameraInputRef.current?.click()}
-            className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-xl border border-slate-200 transition-all cursor-pointer shadow-2xs"
-            title="스마트폰 기본 카메라 앱 실행"
-          >
-            <Camera className="w-3.5 h-3.5 text-slate-500" />
-            <span>기본 카메라</span>
+            <span>앨범에서 올리기</span>
           </button>
 
           {isProcessingPhotos && (
@@ -669,10 +648,6 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
             </span>
           )}
         </div>
-
-        <p className="text-[11px] text-slate-500 flex items-center gap-1">
-          <span>💡 <strong>[현장 연속 즉시촬영]</strong>을 누르면 앱 내에서 찰칵 찍고 <strong>확인/재촬영/다음장 촬영</strong>을 연속으로 진행할 수 있습니다.</span>
-        </p>
 
         {/* Photos Thumbnail Grid */}
         {photos.length > 0 && (

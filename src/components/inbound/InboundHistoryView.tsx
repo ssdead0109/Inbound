@@ -404,7 +404,7 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Bottom Line: Supplier Name + Warehouse + Date */}
+                  {/* Bottom Line: Supplier Name + Warehouse + Inbound Date */}
                   <div className="flex items-center space-x-2 text-xs text-slate-600 flex-wrap gap-y-1">
                     <span className="font-semibold text-slate-900 truncate max-w-[150px] sm:max-w-[240px]">
                       {slip.supplierName}
@@ -414,8 +414,9 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
                       {targetWarehouse}
                     </span>
                     <span className="text-slate-300">•</span>
-                    <span className="text-slate-500 font-mono text-[11px] whitespace-nowrap">
-                      {slip.deliveryDate}
+                    <span className="text-emerald-700 font-bold font-mono text-[11px] whitespace-nowrap flex items-center gap-1 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded">
+                      <Calendar className="w-3 h-3 text-emerald-600" />
+                      <span>입고일시: {slip.inboundDate ? slip.inboundDate.slice(0, 16).replace('T', ' ') : (slip.updatedAt ? slip.updatedAt.slice(0, 16).replace('T', ' ') : slip.deliveryDate)}</span>
                     </span>
                   </div>
                 </div>
@@ -423,6 +424,49 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
                 {/* Slip Items Breakdown */}
                 {!isCollapsed && (
                   <div className="p-3.5 sm:p-4 space-y-3">
+                    
+                    {/* Attached Photos Gallery Section (전표 클릭 시 입고 사진 최우선 표시) */}
+                    {hasPhotos && (
+                      <div className="bg-indigo-50/50 p-3.5 rounded-2xl border border-indigo-100/80 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                            <Camera className="w-4 h-4 text-indigo-600" />
+                            <span>현장 입고 사진 ({slip.photos!.length}장)</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => openPhotoViewer(slip.photos!, slip.slipNo, 0)}
+                            className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 cursor-pointer bg-white px-2.5 py-1 rounded-lg border border-indigo-200/60 shadow-2xs"
+                          >
+                            <ZoomIn className="w-3.5 h-3.5" />
+                            <span>크게보기</span>
+                          </button>
+                        </div>
+
+                        <div className="flex items-center space-x-2.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
+                          {slip.photos!.map((url, pIdx) => (
+                            <div
+                              key={pIdx}
+                              onClick={() => openPhotoViewer(slip.photos!, slip.slipNo, pIdx)}
+                              className="group relative w-18 h-18 sm:w-22 sm:h-22 rounded-xl overflow-hidden border-2 border-white shadow-sm shrink-0 cursor-pointer hover:border-indigo-500 transition-all hover:scale-105 bg-slate-100"
+                            >
+                              <img
+                                src={url}
+                                alt={`입고 사진 ${pIdx + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                              <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
+                                <ZoomIn className="w-4 h-4 drop-shadow" />
+                              </div>
+                              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-mono px-1 rounded">
+                                #{pIdx + 1}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="text-[10px] font-bold text-slate-400 px-1 uppercase tracking-wider flex items-center justify-between">
                       <span>세부 품목 내역 ({slip.items.length}건)</span>
                       <span>담당: <strong className="text-slate-700">{slip.manager || '자재과'}</strong></span>
@@ -436,13 +480,21 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
                         return (
                           <div
                             key={item.id || idx}
+                            onClick={() => {
+                              if (hasPhotos) {
+                                openPhotoViewer(slip.photos!, slip.slipNo, 0);
+                              }
+                            }}
                             className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs transition-colors ${
+                              hasPhotos ? 'cursor-pointer hover:border-indigo-300' : ''
+                            } ${
                               itemDefect
                                 ? 'bg-rose-50/40 border-rose-200'
                                 : itemMatch
                                 ? 'bg-slate-50 border-slate-200'
                                 : 'bg-amber-50/40 border-amber-200'
                             }`}
+                            title={hasPhotos ? '클릭 시 입고 사진 보기' : undefined}
                           >
                             {/* Item Info */}
                             <div className="flex-1 min-w-0">
@@ -456,6 +508,12 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
                                 {item.spec && (
                                   <span className="text-2xs text-slate-500 font-normal">
                                     • {item.spec}
+                                  </span>
+                                )}
+                                {hasPhotos && (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-600 text-[10px] font-medium border border-indigo-200/50">
+                                    <Camera className="w-2.5 h-2.5" />
+                                    <span>사진</span>
                                   </span>
                                 )}
                               </div>
@@ -493,56 +551,27 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
                       })}
                     </div>
 
-                    {/* Attached Photos Gallery Section */}
-                    {hasPhotos && (
-                      <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                            <Camera className="w-4 h-4 text-indigo-600" />
-                            현장 입고 증빙 사진 ({slip.photos!.length}장)
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => openPhotoViewer(slip.photos!, slip.slipNo, 0)}
-                            className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 cursor-pointer"
-                          >
-                            <ZoomIn className="w-3.5 h-3.5" />
-                            <span>전체보기</span>
-                          </button>
-                        </div>
-
-                        <div className="flex items-center space-x-2.5 overflow-x-auto pb-1 pt-0.5">
-                          {slip.photos!.map((url, pIdx) => (
-                            <div
-                              key={pIdx}
-                              onClick={() => openPhotoViewer(slip.photos!, slip.slipNo, pIdx)}
-                              className="group relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-slate-200 shrink-0 cursor-pointer shadow-2xs hover:border-indigo-400 transition-all hover:scale-105"
-                            >
-                              <img
-                                src={url}
-                                alt={`입고 사진 ${pIdx + 1}`}
-                                className="w-full h-full object-cover"
-                              />
-                              <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
-                                <ZoomIn className="w-4 h-4 drop-shadow" />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
                     {slip.memo && (
                       <p className="text-xs text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                         메모: {slip.memo}
                       </p>
                     )}
 
-                    {/* 세부품목내역 하단: 입고취소 액션 바 */}
-                    <div className="pt-2.5 border-t border-slate-200/80 flex items-center justify-between gap-2">
-                      <div className="text-[11px] text-slate-500 font-medium">
-                        {slip.inboundDate ? `입고일시: ${slip.inboundDate.slice(0, 16).replace('T', ' ')}` : '입고 확정 완료'}
+                    {/* 세부품목내역 하단: 발주일시 + 발주번호 및 입고취소 액션 바 */}
+                    <div className="pt-2.5 border-t border-slate-200/80 flex items-center justify-between gap-2 flex-wrap">
+                      <div className="text-[11px] text-slate-600 font-medium flex items-center gap-2 flex-wrap">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-slate-400" />
+                          <span>발주일시: <strong className="font-mono text-slate-900">{slip.deliveryDate || '미지정'}</strong></span>
+                        </span>
+                        {slip.poNumber && (
+                          <>
+                            <span className="text-slate-300">•</span>
+                            <span>발주번호: <strong className="font-mono text-indigo-700">{slip.poNumber}</strong></span>
+                          </>
+                        )}
                       </div>
+
                       <button
                         type="button"
                         disabled={cancellingSlipNo === slip.slipNo}
