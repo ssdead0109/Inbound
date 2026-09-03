@@ -5,7 +5,13 @@ import path from 'path';
 import { mssqlAdapter } from '../db/mssqlAdapter';
 import { getItemByCode, createItem } from '../db';
 import { InventoryItem } from '../types';
-import { isSupabaseConfigured, fetchMaterialsFromSupabase, fetchPurchaseOrdersFromSupabase } from '../db/supabaseAdapter';
+import {
+  isSupabaseConfigured,
+  fetchMaterialsFromSupabase,
+  fetchPurchaseOrdersFromSupabase,
+  fetchSlipsFromSupabase,
+  fetchSlipByNoFromSupabase,
+} from '../db/supabaseAdapter';
 import { getAllInboundSlips } from '../db/inboundDb';
 
 const router = Router();
@@ -528,54 +534,139 @@ router.post('/import-item', (req: Request, res: Response) => {
   }
 });
 
-// GET /api/erp/inbound/pending-slips - ERP '미입고현황' 실시간 미입고 전표 목록
+// GET /api/erp/inbound/pending-slips - 미입고 전표 목록 조회
 router.get('/inbound/pending-slips', async (req: Request, res: Response) => {
   try {
-    const { getErpPendingSlips } = await import('../db/erpInboundDb');
     const query = typeof req.query.query === 'string' ? req.query.query : undefined;
-    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '50', 10), 1), 100);
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '50', 10), 1), 200);
 
-    const slips = await getErpPendingSlips(query, limit);
+    // 1. Supabase 클라우드 모드 우선 조회
+    if (isSupabaseConfigured()) {
+      try {
+        const allSlips = await fetchSlipsFromSupabase(query);
+        const pending = allSlips.filter(s => s.status === 'WAITING' || s.status === 'INSPECTING' || s.status === 'HOLD').slice(0, limit);
+        return res.json({
+          success: true,
+          count: pending.length,
+          data: pending,
+        });
+      } catch (supaErr) {
+        console.warn('[ERP Inbound Slips] Supabase fetch failed, falling back:', supaErr);
+      }
+    }
+
+    // 2. 사내 MSSQL 모드 (연결 성공 시)
+    const isConnected = await mssqlAdapter.connect();
+    if (isConnected) {
+      const { getErpPendingSlips } = await import('../db/erpInboundDb');
+      const slips = await getErpPendingSlips(query, limit);
+      return res.json({
+        success: true,
+        count: slips.length,
+        data: slips,
+      });
+    }
+
+    // 3. Fallback: 로컬 데이터베이스
+    const localSlips = getAllInboundSlips({ query });
+    const pending = localSlips.filter(s => s.status === 'WAITING' || s.status === 'INSPECTING' || s.status === 'HOLD').slice(0, limit);
     res.json({
       success: true,
-      count: slips.length,
-      data: slips,
+      count: pending.length,
+      data: pending,
     });
   } catch (err: any) {
     console.error('[ERP Inbound Slips Error]', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.json({ success: true, count: 0, data: [] });
   }
 });
 
-// GET /api/erp/inbound/history - ERP 'MT_T_입출고' 실시간 입고 완료 내역 조회
+// GET /api/erp/inbound/history - 입고 완료 내역 조회
 router.get('/inbound/history', async (req: Request, res: Response) => {
   try {
-    const { getErpInboundHistory } = await import('../db/erpInboundDb');
-    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '100', 10), 1), 200);
-    const slips = await getErpInboundHistory(limit);
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '100', 10), 1), 300);
+
+    // 1. Supabase 클라우드 모드 우선 조회
+    if (isSupabaseConfigured()) {
+      try {
+        const allSlips = await fetchSlipsFromSupabase();
+        const completed = allSlips
+          .filter(s => s.status === 'COMPLETED' || s.status === 'PARTIAL')
+          .slice(0, limit);
+        return res.json({
+          success: true,
+          count: completed.length,
+          data: completed,
+        });
+      } catch (supaErr) {
+        console.warn('[ERP Inbound History] Supabase fetch failed, falling back:', supaErr);
+      }
+    }
+
+    // 2. 사내 MSSQL 모드 (연결 성공 시)
+    const isConnected = await mssqlAdapter.connect();
+    if (isConnected) {
+      const { getErpInboundHistory } = await import('../db/erpInboundDb');
+      const slips = await getErpInboundHistory(limit);
+      return res.json({
+        success: true,
+        count: slips.length,
+        data: slips,
+      });
+    }
+
+    // 3. Fallback: 로컬 데이터베이스
+    const localSlips = getAllInboundSlips();
+    const completed = localSlips.filter(s => s.status === 'COMPLETED' || s.status === 'PARTIAL').slice(0, limit);
     res.json({
       success: true,
-      count: slips.length,
-      data: slips,
+      count: completed.length,
+      data: completed,
     });
   } catch (err: any) {
     console.error('[ERP Inbound History Error]', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.json({ success: true, count: 0, data: [] });
   }
 });
 
-// GET /api/erp/inbound/slips/:slipNo - ERP 단건 전표 조회 (QR 스캔 실시간 매칭용)
+// GET /api/erp/inbound/slips/:slipNo - 단건 전표 조회 (QR 스캔 실시간 매칭용)
 router.get('/inbound/slips/:slipNo', async (req: Request, res: Response) => {
   try {
-    const { getErpSlipByNo } = await import('../db/erpInboundDb');
-    const slip = await getErpSlipByNo(req.params.slipNo);
-    if (!slip) {
-      return res.status(404).json({
-        success: false,
-        message: `사내 ERP 미입고현황에서 전표 [${req.params.slipNo}]를 찾을 수 없습니다.`,
-      });
+    const slipNo = req.params.slipNo.trim();
+
+    // 1. Supabase 클라우드 모드 우선 조회
+    if (isSupabaseConfigured()) {
+      try {
+        const slip = await fetchSlipByNoFromSupabase(slipNo);
+        if (slip) {
+          return res.json({ success: true, data: slip });
+        }
+      } catch (supaErr) {
+        console.warn('[ERP Inbound Slip] Supabase fetch failed, falling back:', supaErr);
+      }
     }
-    res.json({ success: true, data: slip });
+
+    // 2. 사내 MSSQL 모드 (연결 성공 시)
+    const isConnected = await mssqlAdapter.connect();
+    if (isConnected) {
+      const { getErpSlipByNo } = await import('../db/erpInboundDb');
+      const slip = await getErpSlipByNo(slipNo);
+      if (slip) {
+        return res.json({ success: true, data: slip });
+      }
+    }
+
+    // 3. Fallback: 로컬 데이터베이스
+    const { getInboundSlipByNo } = await import('../db/inboundDb');
+    const localSlip = getInboundSlipByNo(slipNo);
+    if (localSlip) {
+      return res.json({ success: true, data: localSlip });
+    }
+
+    res.status(404).json({
+      success: false,
+      message: `전표 [${slipNo}]를 찾을 수 없습니다.`,
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

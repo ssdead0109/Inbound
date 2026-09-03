@@ -779,7 +779,8 @@ export async function getErpInboundPrintData(
 export async function getErpInboundHistory(limit: number = 100): Promise<InboundSlip[]> {
   const isConnected = await mssqlAdapter.connect();
   if (!isConnected) {
-    throw new Error('ERP MSSQL 서버에 연결할 수 없습니다.');
+    const cached = getAllInboundSlips();
+    return cached.filter((s) => s.status === 'COMPLETED' || s.status === 'PARTIAL').slice(0, limit);
   }
 
   const sql = `
