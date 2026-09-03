@@ -496,6 +496,8 @@ export async function saveCachedUserAuth(authUser: CachedAuthUser): Promise<void
   return new Promise((resolve, reject) => {
     const tx = db.transaction([STORE_AUTH], 'readwrite');
     const store = tx.objectStore(STORE_AUTH);
+    // 보안 강화: 타인 계정 정보는 모두 삭제하고 본인 계정 1개만 단독 저장
+    store.clear();
     store.put(authUser);
 
     tx.oncomplete = () => resolve();

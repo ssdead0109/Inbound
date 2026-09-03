@@ -31,7 +31,6 @@ import { ErpMaterialSearchView } from './components/erp/ErpMaterialSearchView';
 import { InboundPurchaseOrderView } from './components/inbound/InboundPurchaseOrderView';
 import { InboundLoginModal } from './components/auth/InboundLoginModal';
 import { ScrollToTopButton } from './components/common/ScrollToTopButton';
-import { ServerConnectionModal } from './components/common/ServerConnectionModal';
 import { ErpUser } from './api/erpApi';
 import {
   saveSlipsToIndexedDb,
@@ -101,7 +100,6 @@ export default function App() {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [slipToPrint, setSlipToPrint] = useState<InboundSlip | null>(null);
   const [isSyncQueueOpen, setIsSyncQueueOpen] = useState<boolean>(false);
-  const [isServerModalOpen, setIsServerModalOpen] = useState<boolean>(false);
 
   // Toast Notification
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -820,7 +818,6 @@ export default function App() {
         onLogout={handleLogout}
         onRefreshData={handleRefreshData}
         onOpenSyncQueue={() => setIsSyncQueueOpen(true)}
-        onOpenServerConfig={() => setIsServerModalOpen(true)}
       />
 
       {/* Main Workspace Body */}
@@ -945,21 +942,6 @@ export default function App() {
         isOpen={isSyncQueueOpen}
         onClose={() => setIsSyncQueueOpen(false)}
         onShowToast={showToast}
-      />
-
-      {/* Server Connection & Mode Selection Modal */}
-      <ServerConnectionModal
-        isOpen={isServerModalOpen}
-        onClose={() => setIsServerModalOpen(false)}
-        onSelectOfflineMode={() => {
-          setIsServerModalOpen(false);
-          showToast('오프라인 작업 모드로 설정되었습니다.', 'info');
-        }}
-        onReconnectSuccess={() => {
-          setIsServerModalOpen(false);
-          handleRefreshData();
-          showToast('서버에 성공적으로 재접속되었습니다.', 'success');
-        }}
       />
 
     </div>

@@ -7,7 +7,6 @@ import {
   Database,
   LogOut,
   RefreshCw,
-  Server
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { InboundViewTab } from '../../types/inbound';
@@ -248,18 +247,6 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
                   <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                   <span className="font-bold text-slate-900 truncate max-w-[65px] sm:max-w-none">{currentUser.name}</span>
                 </div>
-
-                {/* Server Connection Settings Button */}
-                {onOpenServerConfig && (
-                  <button
-                    type="button"
-                    onClick={onOpenServerConfig}
-                    title="서버 IP/포트 설정 및 접속 모드"
-                    className="p-1.5 sm:p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors cursor-pointer shrink-0 border border-slate-200 hover:border-indigo-200"
-                  >
-                    <Server className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </button>
-                )}
 
                 {/* Refresh Data Button */}
                 {onRefreshData && (
