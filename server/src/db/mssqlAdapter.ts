@@ -5,6 +5,7 @@
 import sql from 'mssql';
 import dotenv from 'dotenv';
 import { getDummyMaterials, DUMMY_WAREHOUSES, DummyMaterial } from './dummyErpData';
+import { isSupabaseConfigured } from './supabaseAdapter';
 
 dotenv.config();
 
@@ -47,6 +48,13 @@ export class MssqlAdapter {
 
   public async connect(force = false): Promise<boolean> {
     try {
+      // Supabase 클라우드 모드인 경우 사내 MSSQL 연결 시도를 생략
+      if (isSupabaseConfigured() && !force) {
+        this.isConnected = false;
+        this.isDummyMode = true;
+        return false;
+      }
+
       if (this.pool && this.isConnected && !this.isDummyMode) {
         return true;
       }
