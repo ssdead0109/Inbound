@@ -26,8 +26,6 @@ export function parseInboundQrCode(rawScannedText: string): ParsedQrResult {
       type: 'SHORT_TOKEN',
       token,
       rawText: text,
-      // Default guess fallback before server resolution
-      slipNo: token,
     };
   }
 
@@ -228,9 +226,11 @@ export async function resolveInboundQrResult(parsed: ParsedQrResult): Promise<Pa
       slipNo: record.type === 'INBOUND' ? record.targetId : parsed.slipNo || record.targetId,
       itemCode: record.type === 'ITEM' ? record.targetId : parsed.itemCode,
     };
-  } catch (err) {
-    console.warn(`[inboundQrParser] Failed to resolve token ${parsed.token}, fallback to raw target:`, err);
-    return parsed;
+  } catch (err: any) {
+    console.warn(`[inboundQrParser] Failed to resolve token ${parsed.token}:`, err);
+    throw new Error(
+      `QR 코드 토큰 [${parsed.token}]에 연결된 전표를 서버에서 찾을 수 없습니다. 최신 전표 화면에서 QR 코드를 다시 스캔해주세요.`
+    );
   }
 }
 

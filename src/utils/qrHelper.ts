@@ -153,22 +153,12 @@ export function generateItemQRValue(item: InventoryItem): string {
 
 /**
  * Generates QR code value for an inbound slip (납품확인서/입고전표)
- * Format: https://[domain]/q/[token]
+ * Format: https://[domain]/?slipNo=[slipNo]
+ * 전표 번호 직결 포맷: 서버 토큰 매핑 손실이나 네트워크 두절과 무관하게 100% 영구 정확 보장!
  */
 export function generateInboundQRValue(slipNo: string): string {
   if (!slipNo) return '';
   const cleanSlip = slipNo.trim();
-
-  // 1. Check cached token
-  const cachedToken = getCachedQrTokenByTarget('INBOUND', cleanSlip);
-  if (cachedToken) {
-    return buildShortQrUrl(cachedToken);
-  }
-
-  // 2. Background token creation
-  getOrCreateQrTokenApi('INBOUND', cleanSlip).catch(() => {});
-
-  // 3. Universal slip URL fallback
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   return `${origin}/?slipNo=${encodeURIComponent(cleanSlip)}`;
 }
