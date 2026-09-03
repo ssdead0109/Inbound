@@ -31,6 +31,8 @@ import { ErpMaterialSearchView } from './components/erp/ErpMaterialSearchView';
 import { InboundPurchaseOrderView } from './components/inbound/InboundPurchaseOrderView';
 import { InboundLoginModal } from './components/auth/InboundLoginModal';
 import { ScrollToTopButton } from './components/common/ScrollToTopButton';
+import { PullToRefreshIndicator } from './components/common/PullToRefreshIndicator';
+import { usePullToRefresh } from './hooks/usePullToRefresh';
 import { PWAInstallBanner } from './components/common/PWAInstallBanner';
 import { ErpUser } from './api/erpApi';
 import {
@@ -58,9 +60,27 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // Main Navigation Tab & Tab History Stack (전에 작업하던 곳으로 뒤로가기)
-  const [currentTab, setCurrentTab] = useState<InboundViewTab>('SCANNER');
-  const [tabHistory, setTabHistory] = useState<InboundViewTab[]>(['SCANNER']);
+  // Main Navigation Tab & Tab History Stack (새로고침 시에도 기존 작업 화면 유지)
+  const [currentTab, setCurrentTab] = useState<InboundViewTab>(() => {
+    try {
+      const saved = localStorage.getItem('kcp_current_tab') as InboundViewTab;
+      const validTabs: InboundViewTab[] = ['SCANNER', 'RECEIVING', 'PENDING', 'HISTORY', 'PURCHASE_ORDERS', 'ERP_SEARCH'];
+      if (saved && validTabs.includes(saved)) {
+        return saved;
+      }
+    } catch {}
+    return 'SCANNER';
+  });
+  const [tabHistory, setTabHistory] = useState<InboundViewTab[]>(() => {
+    try {
+      const saved = localStorage.getItem('kcp_current_tab') as InboundViewTab;
+      const validTabs: InboundViewTab[] = ['SCANNER', 'RECEIVING', 'PENDING', 'HISTORY', 'PURCHASE_ORDERS', 'ERP_SEARCH'];
+      if (saved && validTabs.includes(saved) && saved !== 'SCANNER') {
+        return ['SCANNER', saved];
+      }
+    } catch {}
+    return ['SCANNER'];
+  });
   const lastBackPressRef = useRef<number>(0);
 
   // Slips, Stats & Warehouses State
@@ -69,14 +89,17 @@ export default function App() {
   const [warehouses, setWarehouses] = useState<string[]>(['특장자재창고', '본관 자재1창고', '본관 자재2창고', '외주 가공자재창고', '원자재 야적장']);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Active Slip currently being inspected
-  const [activeSlip, setActiveSlip] = useState<InboundSlip | null>(null);
+  // Active Slip currently being inspected (새로고침 시 세션 복원)
+  const [activeSlip, setActiveSlip] = useState<InboundSlip | null>(() => {
+    try {
+      const saved = sessionStorage.getItem('kcp_active_slip');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
 
-  // Active User / Operator Session (ERP MT_TC_담당자코드 / scu100)
+  // Active User / Operator Session (새로고침 및 당겨서 새로고침 시에도 로그인 세션 유지)
   const [currentUser, setCurrentUser] = useState<ErpUser | null>(() => {
-    const isAutoLogin = localStorage.getItem('kcp_auto_login') === 'true';
-    if (!isAutoLogin) return null;
-
     const saved = localStorage.getItem('kcp_erp_user');
     if (saved) {
       try { return JSON.parse(saved); } catch { return null; }
@@ -119,14 +142,23 @@ export default function App() {
 
     if (slip) {
       setActiveSlip(slip);
+      try {
+        sessionStorage.setItem('kcp_active_slip', JSON.stringify(slip));
+      } catch {}
     } else if (nextTab !== 'RECEIVING') {
       setActiveSlip(null);
+      try {
+        sessionStorage.removeItem('kcp_active_slip');
+      } catch {}
     }
     setTabHistory((prev) => {
       if (prev[prev.length - 1] === nextTab) return prev;
       return [...prev, nextTab];
     });
     setCurrentTab(nextTab);
+    try {
+      localStorage.setItem('kcp_current_tab', nextTab);
+    } catch {}
     try {
       window.history.pushState({ tab: nextTab }, '', '');
     } catch { /* ignore */ }
@@ -135,13 +167,30 @@ export default function App() {
   // Return from inspection to previous screen
   const handleBackFromReceiving = useCallback(() => {
     setActiveSlip(null);
+    try {
+      sessionStorage.removeItem('kcp_active_slip');
+    } catch {}
     setTabHistory((prev) => {
       const copy = [...prev];
       if (copy[copy.length - 1] === 'RECEIVING') copy.pop();
+      const target = copy.length > 0 ? copy[copy.length - 1] : 'SCANNER';
+      setCurrentTab(target);
+      try {
+        localStorage.setItem('kcp_current_tab', target);
+      } catch {}
       return copy.length > 0 ? copy : ['SCANNER'];
     });
-    setCurrentTab('SCANNER');
   }, []);
+
+  // RECEIVING 탭 상태인데 전표 데이터가 없는 경우 안전하게 SCANNER로 복귀
+  useEffect(() => {
+    if (currentTab === 'RECEIVING' && !activeSlip) {
+      setCurrentTab('SCANNER');
+      try {
+        localStorage.setItem('kcp_current_tab', 'SCANNER');
+      } catch {}
+    }
+  }, [currentTab, activeSlip]);
 
   // Register Back Handler for Simulator Modal (Priority 100)
   useEffect(() => {
@@ -185,8 +234,14 @@ export default function App() {
         const prevTab = copy[copy.length - 1] || 'SCANNER';
         setTabHistory(copy);
         setCurrentTab(prevTab);
+        try {
+          localStorage.setItem('kcp_current_tab', prevTab);
+        } catch {}
         if (prevTab !== 'RECEIVING') {
           setActiveSlip(null);
+          try {
+            sessionStorage.removeItem('kcp_active_slip');
+          } catch {}
         }
         return true;
       }
@@ -372,6 +427,12 @@ export default function App() {
     }
   }, [loadInitialData, showToast]);
 
+  // 모바일 웹 화면에서 아래로 당겨서 새로고침 (In-App Pull-to-Refresh)
+  const { pullDistance, isPulling, isRefreshing, isReady } = usePullToRefresh({
+    onRefresh: handleRefreshData,
+    disabled: !currentUser,
+  });
+
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
@@ -479,6 +540,7 @@ export default function App() {
     setOperator(opTitle);
     localStorage.setItem('kcp_operator', opTitle);
     localStorage.setItem('kcp_erp_user', JSON.stringify(user));
+    localStorage.setItem('kcp_auto_login', 'true');
     showToast(`${user.name}님 로그인 완료! 현장 입고 검수를 시작합니다.`, 'success');
   };
 
@@ -487,6 +549,8 @@ export default function App() {
     setCurrentUser(null);
     localStorage.removeItem('kcp_erp_user');
     localStorage.removeItem('kcp_auto_login');
+    localStorage.removeItem('kcp_current_tab');
+    sessionStorage.removeItem('kcp_active_slip');
     showToast('로그아웃되었습니다.', 'info');
   };
 
@@ -833,6 +897,14 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Mobile Pull-to-Refresh Floating Indicator */}
+      <PullToRefreshIndicator
+        pullDistance={pullDistance}
+        isPulling={isPulling}
+        isRefreshing={isRefreshing}
+        isReady={isReady}
+      />
 
       {/* Main Top Navbar (KCP 자재입고) */}
       <InboundNavbar

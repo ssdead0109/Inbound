@@ -31,9 +31,10 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
     return localStorage.getItem('kcp_remember_id') === 'true';
   });
 
-  // Auto-Login State
+  // Auto-Login State (기본 활성화: 새로고침 또는 재접속 시 로그인 유지)
   const [autoLogin, setAutoLogin] = useState<boolean>(() => {
-    return localStorage.getItem('kcp_auto_login') === 'true';
+    const saved = localStorage.getItem('kcp_auto_login');
+    return saved === null ? true : saved === 'true';
   });
 
   const [code, setCode] = useState<string>(() => {
