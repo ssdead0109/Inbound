@@ -391,7 +391,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
                 자재 마스터 기본 정보
               </h2>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 text-xs">
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-medium block">품목명</span>
                   <span className="text-xs sm:text-sm font-bold text-slate-900 block mt-0.5 truncate">{detailData.item.name}</span>
@@ -400,6 +400,13 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-medium block">규격 / 사양</span>
                   <span className="text-xs sm:text-sm font-mono font-semibold text-slate-800 block mt-0.5 truncate">{detailData.item.spec || '-'}</span>
+                </div>
+
+                <div className="bg-amber-50/60 p-2.5 rounded-xl border border-amber-200/70">
+                  <span className="text-amber-800 font-bold block">자재 등급</span>
+                  <span className="text-xs sm:text-sm font-black text-amber-900 block mt-0.5">
+                    {detailData.item.category || 'A등급'}
+                  </span>
                 </div>
 
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
@@ -424,7 +431,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
                   </span>
                 </div>
 
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 col-span-2">
                   <span className="text-slate-400 font-medium block">비고 / 특이사항</span>
                   <span className="text-xs text-slate-600 block mt-0.5 truncate">
                     {detailData.item.notes || '-'}
@@ -848,11 +855,17 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
                 className="bg-white rounded-2xl border border-slate-200 p-4 hover:border-indigo-300 hover:shadow-md transition-all space-y-3 flex flex-col justify-between"
               >
                 <div className="space-y-2.5">
-                  {/* Top Bar: Item Code & Unit */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-mono font-black text-xs border border-indigo-100">
-                      {item.code}
-                    </span>
+                  {/* Top Bar: Item Code & Grade & Unit */}
+                  <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-mono font-black text-xs border border-indigo-100">
+                        {item.code}
+                      </span>
+                      {/* 자재 등급 뱃지 */}
+                      <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">
+                        {item.category || 'A등급'}
+                      </span>
+                    </div>
                     <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold">
                       {item.unit || 'EA'}
                     </span>
@@ -953,9 +966,14 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
                 includeMargin={true}
               />
               <div className="space-y-1">
-                <span className="font-mono font-black text-lg text-slate-900 tracking-wider block">
-                  {qrPrintItem.code}
-                </span>
+                <div className="flex items-center justify-center gap-1.5">
+                  <span className="font-mono font-black text-lg text-slate-900 tracking-wider">
+                    {qrPrintItem.code}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">
+                    {qrPrintItem.category || 'A등급'}
+                  </span>
+                </div>
                 <span className="font-bold text-sm text-slate-800 block line-clamp-1">
                   {qrPrintItem.name}
                 </span>

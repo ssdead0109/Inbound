@@ -345,6 +345,7 @@ export async function fetchMaterialsFromSupabase(): Promise<any[]> {
         whCode: it.warehouse || '특장자재창고',
         whName: it.warehouse || '특장자재창고',
         zone: it.rack_location || 'A-01-01',
+        category: it.category || 'A등급',
         supplierName: it.supplier || '',
       }));
     }
@@ -370,6 +371,7 @@ export async function fetchMaterialsFromSupabase(): Promise<any[]> {
           whCode: it.warehouse || '특장자재창고',
           whName: it.warehouse || '특장자재창고',
           zone: 'A-01-01',
+          category: 'A등급',
           supplierName: '',
         });
       }
