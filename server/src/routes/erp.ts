@@ -5,7 +5,7 @@ import path from 'path';
 import { mssqlAdapter } from '../db/mssqlAdapter';
 import { getItemByCode, createItem } from '../db';
 import { InventoryItem } from '../types';
-import { isSupabaseConfigured, fetchMaterialsFromSupabase } from '../db/supabaseAdapter';
+import { isSupabaseConfigured, fetchMaterialsFromSupabase, fetchPurchaseOrdersFromSupabase } from '../db/supabaseAdapter';
 import { getAllInboundSlips } from '../db/inboundDb';
 
 const router = Router();
@@ -581,7 +581,7 @@ router.get('/inbound/slips/:slipNo', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/erp/purchase-orders - ERP 'MMB100 + MMB150' 실시간 발주 내역 조회
+// GET /api/erp/purchase-orders - ERP 실시간 발주 내역 조회
 router.get('/purchase-orders', async (req: Request, res: Response) => {
   try {
     const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
@@ -589,9 +589,28 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit as string || '60', 10), 1), 500);
     const offset = Math.max(parseInt(req.query.offset as string || '0', 10), 0);
 
+    // 1. Supabase 클라우드 모드인 경우 tb_purchase_orders 테이블에서 조회
+    if (isSupabaseConfigured()) {
+      try {
+        const { rows, total } = await fetchPurchaseOrdersFromSupabase(query, status, limit, offset);
+        if (rows && rows.length > 0) {
+          return res.json({
+            success: true,
+            count: rows.length,
+            total,
+            hasMore: offset + limit < total,
+            offset,
+            data: rows,
+          });
+        }
+      } catch (supaErr) {
+        console.warn('[ERP] Supabase purchase orders fetch failed, falling back:', supaErr);
+      }
+    }
+
     const isConnected = await mssqlAdapter.connect();
 
-    // 1. 가상 더미 DB 모드일 경우 즉시 현실적인 ERP 발주내역 반환
+    // 2. 가상 더미 DB 모드일 경우 즉시 현실적인 ERP 발주내역 반환
     if (mssqlAdapter.isDummyMode) {
       const { getDummyPurchaseOrders } = await import('../db/dummyErpData');
       const { rows, total } = getDummyPurchaseOrders(query, status, limit, offset);

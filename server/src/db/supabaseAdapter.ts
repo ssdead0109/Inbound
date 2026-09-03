@@ -383,3 +383,67 @@ export async function fetchMaterialsFromSupabase(): Promise<any[]> {
   }
 }
 
+/**
+ * Fetch ERP purchase orders from Supabase (tb_purchase_orders)
+ */
+export async function fetchPurchaseOrdersFromSupabase(
+  query: string = '',
+  status: string = 'ALL',
+  limit: number = 60,
+  offset: number = 0
+): Promise<{ rows: any[]; total: number }> {
+  const client = getSupabaseClient();
+  if (!client) return { rows: [], total: 0 };
+
+  try {
+    let q = client
+      .from('tb_purchase_orders')
+      .select('*', { count: 'exact' })
+      .order('po_no', { ascending: false });
+
+    if (status && status !== 'ALL') {
+      q = q.eq('status', status);
+    }
+
+    if (query && query.trim()) {
+      const kw = query.trim();
+      q = q.or(
+        `po_no.ilike.%${kw}%,supplier_name.ilike.%${kw}%,item_name.ilike.%${kw}%,item_code.ilike.%${kw}%`
+      );
+    }
+
+    q = q.range(offset, offset + limit - 1);
+
+    const { data, count, error } = await q;
+    if (error) {
+      console.error('[Supabase] Error fetching purchase orders:', error);
+      return { rows: [], total: 0 };
+    }
+
+    const rows = (data || []).map((r) => ({
+      poNo: r.po_no,
+      poDate: r.po_date || '',
+      deliveryDate: r.delivery_date || '',
+      supplierCode: r.supplier_code || '',
+      supplierName: r.supplier_name || '',
+      warehouseName: r.warehouse_name || '',
+      itemCode: r.item_code,
+      itemName: r.item_name,
+      itemSpec: r.item_spec || '',
+      unit: r.unit || 'EA',
+      poQty: Number(r.po_qty || 0),
+      receivedQty: Number(r.received_qty || 0),
+      remainQty: Number(r.remain_qty || 0),
+      unitPrice: Number(r.unit_price || 0),
+      totalAmount: Number(r.total_amount || 0),
+      remarks: r.remarks || '',
+      status: r.status || 'WAITING',
+    }));
+
+    return { rows, total: count || rows.length };
+  } catch (err) {
+    console.error('[Supabase] Exception fetching purchase orders:', err);
+    return { rows: [], total: 0 };
+  }
+}
+

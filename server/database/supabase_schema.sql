@@ -116,6 +116,33 @@ CREATE TABLE IF NOT EXISTS public.tb_items (
 CREATE INDEX IF NOT EXISTS ix_items_code ON public.tb_items(code);
 CREATE INDEX IF NOT EXISTS ix_items_name ON public.tb_items(name);
 
+-- 7. 발주 내역 테이블 (tb_purchase_orders)
+CREATE TABLE IF NOT EXISTS public.tb_purchase_orders (
+    po_item_id TEXT NOT NULL PRIMARY KEY,                 -- 고유 식별자 (예: PO_20080300002_000573000)
+    po_no TEXT NOT NULL,                                  -- 발주번호 (예: 20080300002)
+    po_date DATE,                                         -- 발주일자 (YYYY-MM-DD)
+    delivery_date DATE,                                   -- 납기일자 (YYYY-MM-DD)
+    supplier_code TEXT NOT NULL DEFAULT '',               -- 거래처코드
+    supplier_name TEXT NOT NULL DEFAULT '',               -- 거래처명
+    warehouse_name TEXT NOT NULL DEFAULT '특장자재창고',    -- 입고예정 창고
+    item_code TEXT NOT NULL,                              -- 품목코드
+    item_name TEXT NOT NULL,                              -- 품목명
+    item_spec TEXT DEFAULT '',                            -- 규격
+    unit TEXT NOT NULL DEFAULT 'EA',                      -- 단위
+    po_qty NUMERIC(18, 4) NOT NULL DEFAULT 0,             -- 발주수량
+    received_qty NUMERIC(18, 4) NOT NULL DEFAULT 0,       -- 입고수량
+    remain_qty NUMERIC(18, 4) NOT NULL DEFAULT 0,         -- 미입고 잔량
+    unit_price NUMERIC(18, 2) DEFAULT 0,                  -- 발주단가
+    total_amount NUMERIC(18, 2) DEFAULT 0,                -- 발주금액
+    remarks TEXT DEFAULT '',                              -- 적요 / 비고
+    status TEXT NOT NULL DEFAULT 'WAITING',               -- WAITING, PARTIAL, COMPLETED
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_purchase_orders_no ON public.tb_purchase_orders(po_no);
+CREATE INDEX IF NOT EXISTS ix_purchase_orders_supplier ON public.tb_purchase_orders(supplier_name);
+CREATE INDEX IF NOT EXISTS ix_purchase_orders_item ON public.tb_purchase_orders(item_code);
+
 -- ==========================================================
 -- RLS (Row Level Security) 설정: API Key를 통한 읽기/쓰기 허용
 -- ==========================================================
@@ -125,6 +152,7 @@ ALTER TABLE public.tb_qr_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tb_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tb_stock_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tb_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tb_purchase_orders ENABLE ROW LEVEL SECURITY;
 
 -- 테스트 및 웹/모바일 앱 연동을 위한 전체 읽기/쓰기 허용 정책 (Anon / Authenticated)
 DO $$
@@ -146,4 +174,7 @@ BEGIN
 
     DROP POLICY IF EXISTS "Public Full Access tb_items" ON public.tb_items;
     CREATE POLICY "Public Full Access tb_items" ON public.tb_items FOR ALL USING (true) WITH CHECK (true);
+
+    DROP POLICY IF EXISTS "Public Full Access tb_purchase_orders" ON public.tb_purchase_orders;
+    CREATE POLICY "Public Full Access tb_purchase_orders" ON public.tb_purchase_orders FOR ALL USING (true) WITH CHECK (true);
 END $$;
