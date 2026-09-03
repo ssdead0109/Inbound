@@ -145,8 +145,12 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
         }
       }
       for (const w of localWh) {
-        if (w.code && w.code !== 'ALL' && !map.has(w.code)) {
-          map.set(w.code, { code: w.code, name: w.name || w.code });
+        if (w.code && w.code !== 'ALL') {
+          if (!map.has(w.code)) {
+            map.set(w.code, { code: w.code, name: w.name || w.code, itemCount: w.itemCount });
+          } else if (w.itemCount && !map.get(w.code)?.itemCount) {
+            map.get(w.code)!.itemCount = w.itemCount;
+          }
         }
       }
 

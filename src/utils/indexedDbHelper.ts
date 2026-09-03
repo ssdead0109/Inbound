@@ -223,19 +223,26 @@ export async function searchMaterialsInIndexedDbWithTotal(
 /**
  * 인덱스DB에 저장된 자재 데이터들로부터 고유 창고 목록(whCode, whName) 동적 추출
  */
-export async function getUniqueWarehousesFromIndexedDb(): Promise<{ code: string; name: string }[]> {
+export async function getUniqueWarehousesFromIndexedDb(): Promise<{ code: string; name: string; itemCount?: number }[]> {
   const allItems = await getAllMaterialsFromIndexedDb().catch(() => []);
-  const whMap = new Map<string, string>();
+  const whMap = new Map<string, { code: string; name: string; items: Set<string> }>();
   for (const val of allItems) {
     if (val) {
-      const code = (val.whCode || '').trim();
+      const code = (val.whCode || val.whName || '').trim();
       const name = (val.whName || val.whCode || '').trim();
       if (code && code !== 'ALL') {
-        whMap.set(code, name || code);
+        if (!whMap.has(code)) {
+          whMap.set(code, { code, name: name || code, items: new Set() });
+        }
+        whMap.get(code)!.items.add(val.code);
       }
     }
   }
-  const list = Array.from(whMap.entries()).map(([code, name]) => ({ code, name }));
+  const list = Array.from(whMap.values()).map((w) => ({
+    code: w.code,
+    name: w.name,
+    itemCount: w.items.size,
+  }));
   return list.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
 }
 

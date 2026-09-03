@@ -157,14 +157,38 @@ router.get('/warehouses', async (req: Request, res: Response) => {
       return res.json({ success: true, data: list });
     }
 
-    // Fallback when MSSQL is not connected
-    const fallbackList = [
-      { code: 'ALL', name: '전체 창고', itemCount: 142 },
-      { code: '화성부품영업창고', name: '화성부품영업창고', itemCount: 60 },
-      { code: '특장자재창고', name: '특장자재창고', itemCount: 50 },
-      { code: '함안공장', name: '함안공장', itemCount: 32 },
-    ];
-    res.json({ success: true, data: fallbackList });
+    // Fallback when MSSQL is not connected: 실제 자재 마스터 캐시 데이터로부터 각 창고별 실제 자재 수 정확히 동적 집계
+    const cache = await getOrUpdateMaterialsCache(false);
+    if (cache && cache.data && cache.data.length > 0) {
+      const whCounts = new Map<string, { code: string; name: string; items: Set<string> }>();
+      
+      for (const it of cache.data) {
+        const whCode = (it.whCode || it.whName || '특장자재창고').trim();
+        const whName = (it.whName || it.whCode || '특장자재창고').trim();
+        if (!whCounts.has(whCode)) {
+          whCounts.set(whCode, { code: whCode, name: whName, items: new Set() });
+        }
+        whCounts.get(whCode)!.items.add(it.code);
+      }
+
+      const list = Array.from(whCounts.values()).map((w) => ({
+        code: w.code,
+        name: w.name,
+        itemCount: w.items.size,
+      }));
+      list.sort((a, b) => b.itemCount - a.itemCount);
+
+      const allUniqueCodes = new Set(cache.data.map((i) => i.code)).size;
+      return res.json({
+        success: true,
+        data: [
+          { code: 'ALL', name: '전체 창고', itemCount: allUniqueCodes },
+          ...list,
+        ],
+      });
+    }
+
+    res.json({ success: true, data: [{ code: 'ALL', name: '전체 창고', itemCount: 0 }] });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
