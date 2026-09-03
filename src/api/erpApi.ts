@@ -28,6 +28,7 @@ export interface ErpMaterial {
   basicStock?: number;
   zone?: string; // 랙/구역 위치
   category: string;
+  grade?: string;
   supplierCode: string;
   supplierName: string;
   notes: string;

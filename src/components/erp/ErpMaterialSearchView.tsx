@@ -38,6 +38,7 @@ import { registerBackHandler } from '../../utils/backHandler';
 import { VirtualGrid } from '../common/VirtualScrollContainer';
 
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { getMaterialGrade, getGradeBadgeStyle } from '../../utils/gradeHelper';
 
 interface ErpMaterialSearchViewProps {
   onShowToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -402,10 +403,20 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
                   <span className="text-xs sm:text-sm font-mono font-semibold text-slate-800 block mt-0.5 truncate">{detailData.item.spec || '-'}</span>
                 </div>
 
-                <div className="bg-amber-50/60 p-2.5 rounded-xl border border-amber-200/70">
-                  <span className="text-amber-800 font-bold block">자재 등급</span>
-                  <span className="text-xs sm:text-sm font-black text-amber-900 block mt-0.5">
-                    {detailData.item.category || 'A등급'}
+                <div className="bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-200/80">
+                  <span className="text-indigo-800 font-bold block flex items-center justify-between">
+                    <span>자재 관리 등급</span>
+                    <span className="text-[10px] text-indigo-500 font-medium">ABC 분석</span>
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-indigo-950 block mt-0.5">
+                    {getMaterialGrade(detailData.item)}
+                  </span>
+                </div>
+
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <span className="text-slate-400 font-medium block">자재 구분 / 품목분류</span>
+                  <span className="text-xs sm:text-sm font-bold text-slate-900 block mt-0.5 truncate">
+                    {detailData.item.category || '일반부품'}
                   </span>
                 </div>
 
@@ -849,37 +860,51 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
             onEndReached={handleLoadMore}
             hasMore={hasMore}
             isLoadingMore={isLoadingMore}
-            renderItem={(item, idx) => (
-              <div
-                key={`${item.code}_${item.whCode || idx}_${idx}`}
-                className="bg-white rounded-2xl border border-slate-200 p-4 hover:border-indigo-300 hover:shadow-md transition-all space-y-3 flex flex-col justify-between"
-              >
-                <div className="space-y-2.5">
-                  {/* Top Bar: Item Code & Grade & Unit */}
-                  <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-mono font-black text-xs border border-indigo-100">
-                        {item.code}
-                      </span>
-                      {/* 자재 등급 뱃지 */}
-                      <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">
-                        {item.category || 'A등급'}
+            renderItem={(item, idx) => {
+              const grade = getMaterialGrade(item);
+              const gradeStyle = getGradeBadgeStyle(grade);
+              const isSpecificCategory =
+                item.category &&
+                !['일반', '기타', 'ERP연동자재', '납품자재', 'ERP입고자재'].includes(item.category) &&
+                !item.category.includes('등급');
+
+              return (
+                <div
+                  key={`${item.code}_${item.whCode || idx}_${idx}`}
+                  className="bg-white rounded-2xl border border-slate-200 p-4 hover:border-indigo-300 hover:shadow-md transition-all space-y-3 flex flex-col justify-between"
+                >
+                  <div className="space-y-2.5">
+                    {/* Top Bar: Item Code & True Grade (A/B/C/D) & Unit */}
+                    <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-mono font-black text-xs border border-indigo-100">
+                          {item.code}
+                        </span>
+                        {/* 자재 등급 뱃지 (A등급, B등급, C등급, D등급) */}
+                        <span className={`px-2 py-0.5 rounded-md border text-[10px] font-black ${gradeStyle.bg} ${gradeStyle.text} ${gradeStyle.border}`}>
+                          {grade}
+                        </span>
+                        {/* 자재 구분 / 품목분류 (실린더, 밸브 등) */}
+                        {isSpecificCategory && (
+                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200">
+                            {item.category}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold">
+                        {item.unit || 'EA'}
                       </span>
                     </div>
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold">
-                      {item.unit || 'EA'}
-                    </span>
-                  </div>
 
-                  {/* Name & Spec */}
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">
-                      {item.name}
-                    </h3>
-                    <p className="text-xs text-slate-500 font-mono mt-0.5 line-clamp-1">
-                      {item.spec || '-'}
-                    </p>
-                  </div>
+                    {/* Name & Spec */}
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">
+                        {item.name}
+                      </h3>
+                      <p className="text-xs text-slate-500 font-mono mt-0.5 line-clamp-1">
+                        {item.spec || '-'}
+                      </p>
+                    </div>
 
                   {/* Warehouse & Stock Details (같은 물품이라도 창고별 개별 표시, 랙 위치 제외) */}
                   <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
@@ -935,8 +960,9 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
                   </button>
                 </div>
               </div>
-            )}
-          />
+            );
+          }}
+        />
         )}
       </div>
 
@@ -970,8 +996,8 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
                   <span className="font-mono font-black text-lg text-slate-900 tracking-wider">
                     {qrPrintItem.code}
                   </span>
-                  <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">
-                    {qrPrintItem.category || 'A등급'}
+                  <span className={`px-2 py-0.5 rounded-md border text-[10px] font-black ${getGradeBadgeStyle(getMaterialGrade(qrPrintItem)).bg} ${getGradeBadgeStyle(getMaterialGrade(qrPrintItem)).text} ${getGradeBadgeStyle(getMaterialGrade(qrPrintItem)).border}`}>
+                    {getMaterialGrade(qrPrintItem)}
                   </span>
                 </div>
                 <span className="font-bold text-sm text-slate-800 block line-clamp-1">
