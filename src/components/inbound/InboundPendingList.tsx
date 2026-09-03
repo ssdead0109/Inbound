@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { InboundSlip } from '../../types/inbound';
 import { fetchErpPendingSlips, fetchErpStatus } from '../../api/erpApi';
+import { matchesMultiKeyword } from '../../utils/searchHelper';
 
 interface InboundPendingListProps {
   slips: InboundSlip[];
@@ -70,14 +71,15 @@ export const InboundPendingList: React.FC<InboundPendingListProps> = ({
   const filteredLocal = localPendingList.filter((s) => {
     if (statusFilter !== 'ALL' && s.status !== statusFilter) return false;
     if (searchTerm.trim()) {
-      const q = searchTerm.trim().toLowerCase();
-      const matchNo = s.slipNo.toLowerCase().includes(q);
-      const matchSupplier = s.supplierName.toLowerCase().includes(q);
-      const matchPo = s.poNumber?.toLowerCase().includes(q);
-      const matchItem = s.items.some(
-        (it) => it.itemCode.toLowerCase().includes(q) || it.itemName.toLowerCase().includes(q)
-      );
-      return matchNo || matchSupplier || matchPo || matchItem;
+      const itemFields = s.items.flatMap((it) => [it.itemCode, it.itemName, it.spec, it.warehouse]);
+      return matchesMultiKeyword(searchTerm, [
+        s.slipNo,
+        s.supplierName,
+        s.poNumber,
+        s.manager,
+        s.memo,
+        ...itemFields,
+      ]);
     }
     return true;
   });

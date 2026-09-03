@@ -358,15 +358,16 @@ router.get('/materials', async (req: Request, res: Response) => {
         filtered = filtered.filter(item => item.whCode === whCode || item.whName === whCode);
       }
 
-      // 2) 검색어 인메모리 필터링 (< 1ms)
+      // 2) 검색어 다중 키워드 AND 인메모리 필터링 (< 1ms)
+      // "elbow twin" 검색 시 elbow와 twin을 모두 포함한 품목만 필터링
       if (query) {
-        filtered = filtered.filter(item =>
-          (item.code && item.code.toLowerCase().includes(query)) ||
-          (item.name && item.name.toLowerCase().includes(query)) ||
-          (item.spec && item.spec.toLowerCase().includes(query)) ||
-          (item.zone && item.zone.toLowerCase().includes(query)) ||
-          (item.supplierName && item.supplierName.toLowerCase().includes(query))
-        );
+        const tokens = query.split(/\s+/).filter(Boolean);
+        if (tokens.length > 0) {
+          filtered = filtered.filter(item => {
+            const combinedText = `${item.code || ''} ${item.name || ''} ${item.spec || ''} ${item.category || ''} ${item.zone || ''} ${item.whName || ''} ${item.supplierName || ''} ${item.notes || ''}`.toLowerCase();
+            return tokens.every(token => combinedText.includes(token));
+          });
+        }
       }
 
       const pagedData = filtered.slice(offset, offset + limit);

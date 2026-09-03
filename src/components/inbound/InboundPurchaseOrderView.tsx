@@ -17,6 +17,7 @@ import { ErpPurchaseOrder, fetchErpPurchaseOrders } from '../../api/erpApi';
 import { VirtualGrid } from '../common/VirtualScrollContainer';
 
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { matchesMultiKeyword } from '../../utils/searchHelper';
 
 interface InboundPurchaseOrderViewProps {
   onShowToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -94,25 +95,24 @@ const InboundPurchaseOrderViewComponent: React.FC<InboundPurchaseOrderViewProps>
     }
   };
 
-  // Filter orders by status and search term
+  // Filter orders by status and multi-keyword AND search term
   const filteredOrders = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
     return orders.filter((order) => {
       // Status filter
       if (statusFilter !== 'ALL' && order.status !== statusFilter) {
         return false;
       }
-      // Search term filter
-      if (!term) return true;
-      return (
-        order.poNo.toLowerCase().includes(term) ||
-        order.supplierName.toLowerCase().includes(term) ||
-        order.itemCode.toLowerCase().includes(term) ||
-        order.itemName.toLowerCase().includes(term) ||
-        order.itemSpec.toLowerCase().includes(term) ||
-        order.warehouseName.toLowerCase().includes(term) ||
-        order.remarks.toLowerCase().includes(term)
-      );
+      // Multi-keyword AND Search term filter
+      if (!searchTerm.trim()) return true;
+      return matchesMultiKeyword(searchTerm, [
+        order.poNo,
+        order.supplierName,
+        order.itemCode,
+        order.itemName,
+        order.itemSpec,
+        order.warehouseName,
+        order.remarks,
+      ]);
     });
   }, [orders, statusFilter, searchTerm]);
 

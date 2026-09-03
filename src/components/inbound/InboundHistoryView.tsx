@@ -29,6 +29,7 @@ import { fetchErpStatus } from '../../api/erpApi';
 import { registerBackHandler } from '../../utils/backHandler';
 import { cancelInboundReceipt } from '../../utils/syncQueueHelper';
 import { soundHelper } from '../../utils/soundHelper';
+import { matchesMultiKeyword } from '../../utils/searchHelper';
 
 interface InboundHistoryViewProps {
   slips: InboundSlip[];
@@ -175,18 +176,15 @@ const InboundHistoryViewComponent: React.FC<InboundHistoryViewProps> = ({
   const filteredSlips = historySlips.filter((s) => {
     if (statusFilter !== 'ALL' && s.status !== statusFilter) return false;
     if (searchTerm.trim()) {
-      const q = searchTerm.trim().toLowerCase();
-      const matchNo = s.slipNo.toLowerCase().includes(q);
-      const matchSupplier = s.supplierName.toLowerCase().includes(q);
-      const matchManager = s.manager?.toLowerCase().includes(q);
-      const matchItem = s.items.some(
-        (it) =>
-          it.itemCode.toLowerCase().includes(q) ||
-          it.itemName.toLowerCase().includes(q) ||
-          (it.spec && it.spec.toLowerCase().includes(q)) ||
-          (it.warehouse && it.warehouse.toLowerCase().includes(q))
-      );
-      return matchNo || matchSupplier || matchManager || matchItem;
+      const itemFields = s.items.flatMap((it) => [it.itemCode, it.itemName, it.spec, it.warehouse, it.defectReason]);
+      return matchesMultiKeyword(searchTerm, [
+        s.slipNo,
+        s.supplierName,
+        s.poNumber,
+        s.manager,
+        s.memo,
+        ...itemFields,
+      ]);
     }
     return true;
   });

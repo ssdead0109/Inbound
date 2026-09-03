@@ -1,6 +1,7 @@
 import { ErpMaterial, ErpUser } from '../api/erpApi';
 import { InboundSlip } from '../types/inbound';
 import { isDummySlip } from './dummyHelper';
+import { matchesMultiKeyword } from './searchHelper';
 
 const DB_NAME = 'SmartRack_IndexedDB';
 const DB_VERSION = 2;
@@ -194,15 +195,22 @@ export async function searchMaterialsInIndexedDbWithTotal(
     filtered = filtered.filter((item) => item.whCode === cleanWh || item.whName === cleanWh);
   }
 
-  // 2. 검색어 필터링 (< 0.5ms)
+  // 2. 검색어 다중 키워드 AND 필터링 (< 0.5ms)
+  // 예: "elbow twin" 입력 시 elbow와 twin을 모두 포함하는 자재만 반환
   if (cleanQ) {
-    filtered = filtered.filter(
-      (val) =>
-        (val.code && val.code.toLowerCase().includes(cleanQ)) ||
-        (val.name && val.name.toLowerCase().includes(cleanQ)) ||
-        (val.spec && val.spec.toLowerCase().includes(cleanQ)) ||
-        (val.zone && val.zone.toLowerCase().includes(cleanQ)) ||
-        (val.supplierName && val.supplierName.toLowerCase().includes(cleanQ))
+    filtered = filtered.filter((val) =>
+      matchesMultiKeyword(cleanQ, [
+        val.code,
+        val.name,
+        val.spec,
+        val.category,
+        val.grade,
+        val.zone,
+        val.whName,
+        val.whCode,
+        val.supplierName,
+        val.notes,
+      ])
     );
   }
 
