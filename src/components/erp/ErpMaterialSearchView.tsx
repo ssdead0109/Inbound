@@ -380,7 +380,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
         {isDetailLoading || !detailData ? (
           <div className="py-24 text-center text-slate-500 space-y-3 bg-white rounded-2xl border border-slate-200 shadow-2xs">
             <RefreshCw className="w-8 h-8 animate-spin mx-auto text-indigo-600" />
-            <p className="text-sm font-semibold">ERP MSSQL 서버에서 자재 마스터 및 실시간 수불 내역을 조회 중입니다...</p>
+            <p className="text-sm font-semibold">자재 마스터 및 수불 내역을 조회 중입니다...</p>
           </div>
         ) : (
           <>
@@ -755,7 +755,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
             </div>
             <div className="flex items-center space-x-2">
               <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
-                사내 ERP 자재 실시간 조회
+                자재 조회
               </h1>
             </div>
           </div>
@@ -819,7 +819,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
           </h2>
           {isLoading && (
             <span className="text-xs text-indigo-600 flex items-center gap-1 font-semibold">
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> 실시간 조회 중...
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> 조회 중...
             </span>
           )}
         </div>

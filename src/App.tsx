@@ -923,7 +923,7 @@ export default function App() {
           }`}
         >
           <Database className="w-5 h-5 text-emerald-600" />
-          <span>ERP 자재</span>
+          <span>자재조회</span>
         </button>
       </div>
 

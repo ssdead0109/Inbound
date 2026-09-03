@@ -135,7 +135,7 @@ const InboundPurchaseOrderViewComponent: React.FC<InboundPurchaseOrderViewProps>
             </div>
             <div className="flex items-center space-x-2">
               <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
-                사내 ERP 발주 내역 실시간 조회
+                발주 내역 조회
               </h1>
             </div>
           </div>
@@ -197,7 +197,7 @@ const InboundPurchaseOrderViewComponent: React.FC<InboundPurchaseOrderViewProps>
           </h2>
           {isLoading && (
             <span className="text-xs text-indigo-600 flex items-center gap-1 font-semibold">
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> 실시간 조회 중...
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> 조회 중...
             </span>
           )}
         </div>

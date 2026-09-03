@@ -182,7 +182,7 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
               }`}
             >
               <Database className="w-4 h-4 text-emerald-400" />
-              <span>ERP 자재조회</span>
+              <span>자재조회</span>
             </button>
           </nav>
 

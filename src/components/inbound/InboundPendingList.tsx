@@ -218,7 +218,7 @@ export const InboundPendingList: React.FC<InboundPendingListProps> = ({
               ? !isErpOnline
                 ? '사내 DB 서버(192.168.2.209:6611)의 전원이 켜져 있는지 확인해주세요. 상단 [서버 설정]에서 실시간 접속 테스트를 실행할 수 있습니다.'
                 : '검색어를 변경하거나 새로고침 버튼을 눌러보세요.'
-              : '새로운 납품확인서를 카메라로 스캔하여 검수를 시작할 수 있습니다.'}
+              : '새로운 납품확인서를 카메라로 스캔하여 입고확인을 시작할 수 있습니다.'}
           </p>
         </div>
       ) : (
@@ -308,7 +308,7 @@ export const InboundPendingList: React.FC<InboundPendingListProps> = ({
 
                 {/* Bottom Action CTA */}
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-indigo-600 font-bold group-hover:text-indigo-700">
-                  <span>실시간 검수 및 입고처리</span>
+                  <span>입고확인</span>
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </div>
               </div>

@@ -296,22 +296,6 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
           <ArrowLeft className="w-4 h-4" />
           <span>QR 스캔으로 돌아가기</span>
         </button>
-
-        {(slip.supplierCode?.startsWith('SUP-ERP') || slip.slipNo.length === 11 || !slip.slipNo.startsWith('DN-')) && (
-          isErpOnline ? (
-            <span className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-[11px] sm:text-xs font-bold shadow-2xs shrink-0">
-              <Database className="w-3.5 h-3.5 text-emerald-600" />
-              <span className="hidden sm:inline">ERP(MSSQL) 실시간 입고 모드</span>
-              <span className="sm:hidden">ERP 모드</span>
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-[11px] sm:text-xs font-bold shadow-2xs shrink-0">
-              <CloudUpload className="w-3.5 h-3.5 text-amber-600" />
-              <span className="hidden sm:inline">오프라인 입고 (대기 큐 등록)</span>
-              <span className="sm:hidden">오프라인</span>
-            </span>
-          )
-        )}
       </div>
 
       {/* Slip Master Overview Card (Simplified with small, balanced typography) */}
@@ -336,10 +320,10 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
                   type="button"
                   onClick={() => onOpenPrintModal(slip)}
                   className="flex items-center space-x-1 text-[11px] font-bold text-indigo-700 hover:text-indigo-900 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-all cursor-pointer shadow-2xs"
-                  title="입하서(전표) 인쇄"
+                  title="전표 인쇄"
                 >
                   <Printer className="w-3 h-3 text-indigo-600" />
-                  <span>입하서 출력</span>
+                  <span>전표 출력</span>
                 </button>
               )}
             </div>
@@ -626,15 +610,7 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
         </div>
 
         {/* Upload Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <input
-            ref={cameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={handlePhotoUpload}
-            className="hidden"
-          />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-wrap">
           <input
             ref={galleryInputRef}
             type="file"
@@ -643,32 +619,44 @@ export const InboundReceivingView: React.FC<InboundReceivingViewProps> = ({
             onChange={handlePhotoUpload}
             className="hidden"
           />
-
-          <button
-            type="button"
-            onClick={() => cameraInputRef.current?.click()}
-            className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 transition-all cursor-pointer shadow-2xs"
-          >
-            <Camera className="w-4 h-4" />
-            <span>현장 사진 촬영</span>
-          </button>
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handlePhotoUpload}
+            className="hidden"
+          />
 
           <button
             type="button"
             onClick={() => galleryInputRef.current?.click()}
-            className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 transition-all cursor-pointer shadow-2xs"
+            className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
           >
-            <ImageIcon className="w-4 h-4 text-slate-500" />
-            <span>앨범에서 선택</span>
+            <ImageIcon className="w-4 h-4" />
+            <span>📷 사진 여러장 한번에 올리기 (앨범/파일)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 transition-all cursor-pointer shadow-2xs"
+          >
+            <Camera className="w-4 h-4 text-slate-500" />
+            <span>즉시 촬영</span>
           </button>
 
           {isProcessingPhotos && (
-            <span className="text-xs text-indigo-600 font-medium flex items-center gap-1 animate-pulse">
-              <div className="w-3 h-3 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin"></div>
-              사진 압축 중...
+            <span className="text-xs text-indigo-600 font-medium flex items-center gap-1.5 animate-pulse py-1">
+              <div className="w-3.5 h-3.5 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin"></div>
+              <span>사진 일괄 압축 및 변환 중...</span>
             </span>
           )}
         </div>
+
+        <p className="text-[11px] text-slate-400">
+          💡 [사진 여러장 한번에 올리기] 버튼을 누르면 스마트폰 갤러리에서 여러 장의 현장 사진을 터치하여 한 번에 등록할 수 있습니다.
+        </p>
 
         {/* Photos Thumbnail Grid */}
         {photos.length > 0 && (

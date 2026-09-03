@@ -572,7 +572,7 @@ const InboundScannerComponent: React.FC<InboundScannerProps> = ({
 
                 {/* Card Footer Action */}
                 <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs text-indigo-600 font-bold">
-                  <span>검수 시작</span>
+                  <span>입고확인</span>
                   <div className="flex items-center space-x-1 group-hover:translate-x-1 transition-transform">
                     <span>이동</span>
                     <ChevronRight className="w-4 h-4" />

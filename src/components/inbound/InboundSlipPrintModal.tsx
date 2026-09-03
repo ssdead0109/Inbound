@@ -94,7 +94,7 @@ export const InboundSlipPrintModal: React.FC<InboundSlipPrintModalProps> = ({
             </div>
             <div className="min-w-0">
               <h3 className="font-bold text-sm sm:text-base text-slate-900 truncate">
-                자재 입하증 인쇄
+                입고 전표 인쇄
               </h3>
               <p className="text-xs text-slate-500 font-normal truncate">
                 전표번호: <strong className="font-mono text-indigo-600 font-bold">{displaySlip.slipNo}</strong>
@@ -132,7 +132,7 @@ export const InboundSlipPrintModal: React.FC<InboundSlipPrintModalProps> = ({
               <div className="flex items-start justify-between border-b-2 border-slate-900 pb-3 sm:pb-4 mb-4">
                 <div>
                   <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-950">
-                    자 재 입 하 증
+                    입 고 전 표
                   </h1>
                   <p className="text-xs text-slate-600 font-mono mt-1">
                     전표번호: <strong>{displaySlip.slipNo}</strong> | 사업장: <strong>(주)KCP</strong>
@@ -169,7 +169,7 @@ export const InboundSlipPrintModal: React.FC<InboundSlipPrintModalProps> = ({
                     <td className="p-2 border-r border-slate-300 font-bold">{displaySlip.manager || '자재과'}</td>
                     <th className="bg-slate-100 p-2 text-left border-r border-slate-300 font-bold whitespace-nowrap">처리상태</th>
                     <td className="p-2 font-bold text-emerald-700 whitespace-nowrap">
-                      {displaySlip.status === 'COMPLETED' ? '입하/입고 완료' : '검수중'}
+                      {displaySlip.status === 'COMPLETED' ? '입고 완료' : '검수중'}
                     </td>
                   </tr>
                 </tbody>
@@ -183,7 +183,7 @@ export const InboundSlipPrintModal: React.FC<InboundSlipPrintModalProps> = ({
                     <th className="p-2 border-r border-slate-300 text-left w-28 whitespace-nowrap">품목코드</th>
                     <th className="p-2 border-r border-slate-300 text-left min-w-[160px]">품목명 / 규격</th>
                     <th className="p-2 border-r border-slate-300 text-right w-16 whitespace-nowrap">발주량</th>
-                    <th className="p-2 border-r border-slate-300 text-right w-20 whitespace-nowrap">입하수량</th>
+                    <th className="p-2 border-r border-slate-300 text-right w-20 whitespace-nowrap">입고수량</th>
                     <th className="p-2 border-r border-slate-300 text-right w-24 whitespace-nowrap">단가</th>
                     <th className="p-2 text-center w-16 whitespace-nowrap">상태</th>
                   </tr>
@@ -237,7 +237,7 @@ export const InboundSlipPrintModal: React.FC<InboundSlipPrintModalProps> = ({
               {/* Signatures */}
               <div className="flex justify-between items-end pt-4 border-t border-slate-300 text-xs">
                 <div>
-                  <p className="text-slate-600 text-[11px]">위 물품의 입하 및 입고 검수를 완료하였음을 확인합니다.</p>
+                  <p className="text-slate-600 text-[11px]">위 물품의 입고 검수를 완료하였음을 확인합니다.</p>
                   <p className="text-slate-400 text-[10px] mt-0.5">KCP 자재관리(WMA) 입고확인 시스템</p>
                 </div>
                 <div className="flex space-x-6 text-center shrink-0">
