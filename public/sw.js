@@ -1,10 +1,9 @@
 // Inbound PWA Service Worker
-const CACHE_NAME = 'inbound-pwa-v1.0';
+const CACHE_NAME = 'inbound-pwa-v1.1';
 
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
-  '/manifest.json',
   '/favicon.png',
   '/icon-192.png',
   '/wma-icon.png',
@@ -45,6 +44,12 @@ self.addEventListener('fetch', (event) => {
 
   // API 요청 및 외부 소켓 요청은 캐시하지 않고 항상 네트워크로 통과
   if (url.pathname.startsWith('/api') || event.request.method !== 'GET') {
+    return;
+  }
+
+  // manifest.json과 sw.js 자체는 절대 캐시하지 않고 항상 최신 네트워크 요청
+  if (url.pathname.includes('manifest.json') || url.pathname.includes('sw.js')) {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }));
     return;
   }
 

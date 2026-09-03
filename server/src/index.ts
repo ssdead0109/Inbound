@@ -75,6 +75,30 @@ app.use('/api/config', configRouter);
 
 // Serve frontend static assets if dist exists (Production mode)
 const distPath = path.resolve(process.cwd(), 'dist');
+
+// PWA Manifest & Service Worker must NEVER be cached by reverse-proxy or browser
+app.get('/manifest.json', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  const manifestDist = path.join(distPath, 'manifest.json');
+  if (fs.existsSync(manifestDist)) {
+    return res.sendFile(manifestDist);
+  }
+  res.sendFile(path.resolve(process.cwd(), 'public', 'manifest.json'));
+});
+
+app.get('/sw.js', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  const swDist = path.join(distPath, 'sw.js');
+  if (fs.existsSync(swDist)) {
+    return res.sendFile(swDist);
+  }
+  res.sendFile(path.resolve(process.cwd(), 'public', 'sw.js'));
+});
+
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
   // SPA fallback for all non-API GET requests
