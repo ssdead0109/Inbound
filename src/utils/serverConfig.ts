@@ -22,6 +22,7 @@ export const STORAGE_KEY_HOST = 'kcp_server_host';
 export const STORAGE_KEY_PORT = 'kcp_server_port';
 export const STORAGE_KEY_OFFLINE_PREF = 'kcp_offline_mode_preferred';
 export const STORAGE_KEY_CUSTOM_URL = 'kcp_custom_server_url';
+export const DEFAULT_RENDER_URL = 'https://inbound-ieni.onrender.com';
 
 // Default values
 export const DEFAULT_BACKEND_HOST = '192.168.2.29';
@@ -297,7 +298,11 @@ export function getServerBaseUrl(): string {
     return savedPort ? `http://${savedHost}:${savedPort}` : `http://${savedHost}`;
   }
 
-  // 5. 기본값: 모바일 앱에서 아무 설정이 없을 때 기본 빈 문자열 반환 (상대 경로)
+  // 5. 기본값: 모바일 앱(Capacitor) 환경에서는 사용자의 Render 클라우드 서버 URL을 기본으로 사용!
+  if (Capacitor.isNativePlatform()) {
+    return DEFAULT_RENDER_URL;
+  }
+
   return '';
 }
 

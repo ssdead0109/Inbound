@@ -18,7 +18,7 @@ import {
   getCachedUserAuth,
   CachedAuthUser
 } from '../../utils/indexedDbHelper';
-import { getServerBaseUrl, setCustomServerUrl } from '../../utils/serverConfig';
+import { getServerBaseUrl, setCustomServerUrl, DEFAULT_RENDER_URL } from '../../utils/serverConfig';
 import { Capacitor } from '@capacitor/core';
 
 interface InboundLoginModalProps {
@@ -48,7 +48,7 @@ export const InboundLoginModal: React.FC<InboundLoginModalProps> = ({ onLoginSuc
 
   // Server URL Configuration State (for mobile apps / remote access)
   const [showServerSetting, setShowServerSetting] = useState(false);
-  const [customServerUrl, setCustomServerUrlInput] = useState(() => getServerBaseUrl() || '');
+  const [customServerUrl, setCustomServerUrlInput] = useState(() => getServerBaseUrl() || DEFAULT_RENDER_URL);
   const [serverTestMsg, setServerTestMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [isTestingServer, setIsTestingServer] = useState(false);
 

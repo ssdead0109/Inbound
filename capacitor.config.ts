@@ -5,6 +5,7 @@ const config: CapacitorConfig = {
   appName: 'KCP 자재관리',
   webDir: 'dist',
   server: {
+    url: 'https://inbound-ieni.onrender.com',
     cleartext: true,
   },
 };
