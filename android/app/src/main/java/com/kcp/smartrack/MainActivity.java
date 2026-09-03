@@ -34,6 +34,19 @@ public class MainActivity extends BridgeActivity {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
+                long currentTime = System.currentTimeMillis();
+
+                // 1. 어느 화면에서든 빠르게 2번(1500ms 이내) 누르면 즉시 앱 완전 종료!
+                if (currentTime - lastBackTime < 1500) {
+                    setEnabled(false);
+                    finishAffinity();
+                    return;
+                }
+
+                // 첫 번째 클릭 시간 기록
+                lastBackTime = currentTime;
+
+                // 2. 웹뷰에 전달하여 이전 화면 이동 or 모달 닫기
                 if (getBridge() != null && getBridge().getWebView() != null) {
                     getBridge().getWebView().evaluateJavascript(
                         "(function() { return (typeof window.handleNativeBackButton === 'function') ? window.handleNativeBackButton() : false; })()",
@@ -41,26 +54,16 @@ public class MainActivity extends BridgeActivity {
                             @Override
                             public void onReceiveValue(String value) {
                                 boolean isHandled = "true".equals(value) || "\"true\"".equals(value);
-                                if (isHandled) {
-                                    // Successfully handled by Web application (modal closed, returned to previous screen)
-                                    return;
-                                }
-
-                                // At root screen: require two presses within 2000ms to exit app
-                                long currentTime = System.currentTimeMillis();
-                                if (currentTime - lastBackTime < 2000) {
-                                    setEnabled(false);
-                                    MainActivity.super.onBackPressed();
-                                } else {
-                                    lastBackTime = currentTime;
-                                    Toast.makeText(MainActivity.this, "뒤로가기 버튼을 한 번 더 누르면 종료됩니다.", Toast.LENGTH_SHORT).show();
+                                if (!isHandled) {
+                                    // 더 이상 뒤로 갈 수 없는 메인화면: 프로그램 종료 안내 메시지 출력
+                                    Toast.makeText(MainActivity.this, "뒤로가기 버튼을 한 번 더 누르면 앱이 종료됩니다.", Toast.LENGTH_SHORT).show();
                                 }
                             }
                         }
                     );
                 } else {
                     setEnabled(false);
-                    MainActivity.super.onBackPressed();
+                    finishAffinity();
                 }
             }
         });

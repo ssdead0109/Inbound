@@ -219,16 +219,21 @@ export default function App() {
 
     if (Capacitor.isNativePlatform()) {
       CapApp.addListener('backButton', () => {
+        const now = Date.now();
+
+        // 1. 어느 화면에서든 1.5초 이내 빠르게 두 번 누르면 즉시 앱 완전 종료!
+        if (now - lastBackPressRef.current < 1500) {
+          CapApp.exitApp();
+          return;
+        }
+
+        lastBackPressRef.current = now;
+
+        // 2. 단일 클릭: 이전 화면/모달 닫기
         const handled = handleGlobalBack();
         if (!handled) {
-          // At root screen: require two presses within 2000ms to exit app
-          const now = Date.now();
-          if (now - lastBackPressRef.current < 2000) {
-            CapApp.exitApp();
-          } else {
-            lastBackPressRef.current = now;
-            showToast('뒤로가기 버튼을 한 번 더 누르면 종료됩니다.', 'info');
-          }
+          // 3. 더 이상 뒤로 갈 수 없는 메인 화면: 종료 안내 토스트
+          showToast('뒤로가기 버튼을 한 번 더 누르면 앱이 종료됩니다.', 'info');
         }
       }).then((l) => {
         capListener = l;
@@ -243,31 +248,28 @@ export default function App() {
     const onPopState = (e: PopStateEvent) => {
       e.preventDefault();
       // In native Capacitor app, physical back button is handled by CapApp.addListener('backButton') and MainActivity.
-      // PopState in native app is triggered by external Activity resumes (Camera, Gallery) and must be ignored.
       if (Capacitor.isNativePlatform()) {
         return;
       }
 
+      const now = Date.now();
+      // 빠르게 2번 누르면 웹에서도 뒤로가기 종료 허용
+      if (now - lastBackPressRef.current < 1500) {
+        window.history.back();
+        return;
+      }
+
+      lastBackPressRef.current = now;
       const handled = handleGlobalBack();
       if (handled) {
         try {
           window.history.pushState({ appRoot: true }, '', '');
         } catch { /* ignore */ }
       } else {
-        const now = Date.now();
-        if (now - lastBackPressRef.current < 2000) {
-          if (Capacitor.isNativePlatform()) {
-            CapApp.exitApp();
-          } else {
-            window.history.back();
-          }
-        } else {
-          lastBackPressRef.current = now;
-          showToast('뒤로가기 버튼을 한 번 더 누르면 종료됩니다.', 'info');
-          try {
-            window.history.pushState({ appRoot: true }, '', '');
-          } catch { /* ignore */ }
-        }
+        showToast('뒤로가기 버튼을 한 번 더 누르면 앱이 종료됩니다.', 'info');
+        try {
+          window.history.pushState({ appRoot: true }, '', '');
+        } catch { /* ignore */ }
       }
     };
 
