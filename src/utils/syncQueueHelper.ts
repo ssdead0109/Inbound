@@ -254,8 +254,8 @@ export async function deleteQueueItemById(id: string): Promise<void> {
     const queue = await getQueueItems();
     const target = queue.find((it) => it.id === id);
     if (target && target.slipNo) {
-      // 연관 전표 입고 취소 및 로컬 재고 롤백
-      await cancelInboundReceipt(target.slipNo, false);
+      // 연관 전표 입고 취소 및 로컬/Supabase/ERP 재고 롤백 (isErp: true로 확실하게 취소)
+      await cancelInboundReceipt(target.slipNo, true);
     }
   } catch (err) {
     console.warn('Failed reverting slip during queue delete:', err);
@@ -263,13 +263,16 @@ export async function deleteQueueItemById(id: string): Promise<void> {
 
   await removeQueueItem(id);
   notifyQueueChanged();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app:refresh-data'));
+  }
 }
 
 /**
  * 입고 확정 전표 취소 처리:
  * 1) 대기 큐(sync_queue)에 있는 경우 큐에서 제거
  * 2) 로컬 서버 재고 롤백 및 전표 WAITING 복구 API 호출
- * 3) ERP 실시간 전표인 경우 ERP 취소 API 호출
+ * 3) ERP & Supabase 취소 API 호출 (서버에서 Cloud/MSSQL 양쪽 롤백 수행)
  * 4) IndexedDB 전표 캐시를 WAITING 상태로 롤백
  * 5) 전역 새로고침 이벤트 트리거
  */
@@ -291,20 +294,18 @@ export async function cancelInboundReceipt(
     console.warn('Failed clearing from queue:', qErr);
   }
 
-  // 2. 로컬 서버 취소 API 호출 (로컬 재고 롤백)
+  // 2. 로컬 서버 취소 API 호출 (로컬 재고 롤백 & Supabase 롤백 트리거)
   try {
     await cancelInboundSlipApi(cleanSlipNo);
   } catch (localErr) {
     console.warn('Local cancel API call failed (continuing with offline fallback):', localErr);
   }
 
-  // 3. ERP 취소 API 호출 (ERP 전표인 경우)
-  if (isErp) {
-    try {
-      await cancelErpInboundReceive(cleanSlipNo);
-    } catch (erpErr) {
-      console.warn('ERP cancel API call failed:', erpErr);
-    }
+  // 3. ERP & Supabase 취소 API 호출 (무조건 시도하여 클라우드 및 ERP 양쪽 롤백 보장)
+  try {
+    await cancelErpInboundReceive(cleanSlipNo);
+  } catch (erpErr) {
+    console.warn('ERP cancel API call failed:', erpErr);
   }
 
   // 4. IndexedDB 전표 상태 복구

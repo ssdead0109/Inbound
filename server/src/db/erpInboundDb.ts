@@ -2,7 +2,7 @@ import { mssqlAdapter } from './mssqlAdapter';
 import { InboundSlip, InboundItem, InboundReceivePayload } from '../types/inbound';
 import { getItemByCode, updateItem, createItem, createLog } from '../db';
 import { upsertInboundSlips, getAllInboundSlips, getInboundSlipByNo, cancelInboundReceiving, processInboundReceiving } from './inboundDb';
-import { isSupabaseConfigured, processInboundReceiveInSupabase } from './supabaseAdapter';
+import { isSupabaseConfigured, processInboundReceiveInSupabase, cancelInboundReceiveInSupabase } from './supabaseAdapter';
 import { StockLog } from '../types';
 
 export interface ErpPendingRow {
@@ -687,7 +687,14 @@ export async function cancelErpInboundReceive(slipNo: string): Promise<{
   // 1. Local inbound cancel first (reverts local stock & resets slip in cache)
   cancelInboundReceiving(cleanSlipNo);
 
-  // 2. If MSSQL connected, delete records from MT_T_입출고
+  // 2. Supabase Cloud DB cancel (rolls back tb_inbound_slips and tb_inbound_items to WAITING)
+  if (isSupabaseConfigured()) {
+    cancelInboundReceiveInSupabase(cleanSlipNo).catch((err) => {
+      console.warn('[ERP Cancel] Supabase cancel rollback error:', err);
+    });
+  }
+
+  // 3. If MSSQL connected, delete records from MT_T_입출고
   const isConnected = await mssqlAdapter.connect();
   if (isConnected) {
     try {

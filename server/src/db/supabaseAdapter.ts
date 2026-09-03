@@ -320,6 +320,55 @@ export async function processInboundReceiveInSupabase(
 }
 
 /**
+ * Cancel inbound receiving in Supabase (rollback to WAITING)
+ */
+export async function cancelInboundReceiveInSupabase(slipNo: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const now = new Date().toISOString();
+
+    // 1. Reset slip status in tb_inbound_slips
+    const { error: slipErr } = await client
+      .from('tb_inbound_slips')
+      .update({
+        status: 'WAITING',
+        total_received_qty: 0,
+        total_defect_qty: 0,
+        inbound_date: null,
+        updated_at: now,
+      })
+      .eq('slip_no', slipNo);
+
+    if (slipErr) {
+      console.error('[Supabase] Error rolling back slip status:', slipErr);
+    }
+
+    // 2. Reset items in tb_inbound_items
+    const { error: itemsErr } = await client
+      .from('tb_inbound_items')
+      .update({
+        received_qty: 0,
+        defect_qty: 0,
+        defect_reason: '',
+        item_status: 'WAITING',
+        updated_at: now,
+      })
+      .eq('slip_no', slipNo);
+
+    if (itemsErr) {
+      console.error('[Supabase] Error rolling back items status:', itemsErr);
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[Supabase] Cancel inbound receive error:', err);
+    return false;
+  }
+}
+
+/**
  * Fetch ERP material masters from Supabase (tb_items with fallback to tb_inbound_items)
  */
 export async function fetchMaterialsFromSupabase(): Promise<any[]> {

@@ -10,6 +10,7 @@ import {
   fetchSlipByNoFromSupabase,
   upsertSlipToSupabase,
   processInboundReceiveInSupabase,
+  cancelInboundReceiveInSupabase,
 } from './supabaseAdapter';
 
 const DATA_DIR = path.resolve(process.cwd(), 'server/data');
@@ -415,6 +416,12 @@ export function cancelInboundReceiving(slipNo: string): {
   slip.updatedAt = now;
 
   saveInboundToDisk();
+
+  if (isSupabaseConfigured()) {
+    cancelInboundReceiveInSupabase(slipNo).catch((err) => {
+      console.warn('[inboundDb] Supabase cancel sync warning:', err);
+    });
+  }
 
   return {
     success: true,
