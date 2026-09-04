@@ -13,6 +13,8 @@ import { InboundViewTab } from '../../types/inbound';
 import { ErpUser, fetchErpStatus } from '../../api/erpApi';
 import { CloudUpload } from 'lucide-react';
 import { getPendingQueueCount, subscribeToQueueChanges, isQueueSyncing } from '../../utils/syncQueueHelper';
+import { FontSizeModal } from '../common/FontSizeModal';
+import { FontSizeLevel, getSavedFontSize, subscribeToFontSizeChange } from '../../utils/fontSizeHelper';
 
 interface InboundNavbarProps {
   currentTab: InboundViewTab;
@@ -47,7 +49,25 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
   const [queueCount, setQueueCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isErpOnline, setIsErpOnline] = useState<boolean>(externalIsOnline ?? true);
+  const [fontSizeLevel, setFontSizeLevel] = useState<FontSizeLevel>(getSavedFontSize);
+  const [isFontSizeModalOpen, setIsFontSizeModalOpen] = useState<boolean>(false);
   const isNativeApp = Capacitor.isNativePlatform();
+
+  // Load and subscribe to font size changes and update header height
+  useEffect(() => {
+    const updateHeaderHeight = () => {
+      const headerEl = document.getElementById('app-header');
+      if (headerEl) {
+        document.documentElement.style.setProperty('--app-header-h', `${headerEl.offsetHeight}px`);
+      }
+    };
+
+    const unsubscribe = subscribeToFontSizeChange((level) => {
+      setFontSizeLevel(level);
+      setTimeout(updateHeaderHeight, 60);
+    });
+    return unsubscribe;
+  }, []);
 
   // Load and subscribe to queue count & syncing state
   useEffect(() => {
@@ -188,6 +208,36 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
 
           {/* Right User Status, Refresh, Sync Queue & Logout */}
           <div className="flex items-center space-x-1 sm:space-x-1.5 shrink-0">
+
+            {/* Font Size (큰글씨 모드) Setting Button */}
+            <button
+              type="button"
+              onClick={() => setIsFontSizeModalOpen(true)}
+              title={
+                fontSizeLevel === 'xlarge'
+                  ? '글씨 크기: 아주 크게 (클릭하여 변경)'
+                  : fontSizeLevel === 'large'
+                  ? '글씨 크기: 크게 (클릭하여 변경)'
+                  : '글씨 크기 설정 (큰글씨 모드)'
+              }
+              className={`relative p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer shrink-0 border flex items-center gap-1 font-bold ${
+                fontSizeLevel !== 'normal'
+                  ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300 shadow-2xs'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-2xs'
+              }`}
+            >
+              <span className="text-xs sm:text-sm font-black tracking-tighter">가A</span>
+              {fontSizeLevel !== 'normal' ? (
+                <span className="px-1 py-0.2 rounded-md text-[10px] font-bold bg-indigo-600 text-white leading-none">
+                  {fontSizeLevel === 'xlarge' ? '아주크게' : '크게'}
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-slate-500 hidden xl:inline">
+                  글씨
+                </span>
+              )}
+            </button>
+
             
             {/* Sync Queue Button (오프라인: 빨간색, 정상: 하얀색, 동기화중: 파란색) */}
             {onOpenSyncQueue && (
@@ -312,6 +362,13 @@ export const InboundNavbar: React.FC<InboundNavbarProps> = ({
 
         </div>
       </div>
+
+      {/* Font Size Setting Modal (큰글씨 모드) */}
+      <FontSizeModal
+        isOpen={isFontSizeModalOpen}
+        onClose={() => setIsFontSizeModalOpen(false)}
+        onChanged={(lvl) => setFontSizeLevel(lvl)}
+      />
     </header>
   );
 };

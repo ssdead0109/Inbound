@@ -944,7 +944,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
               <select
                 value={selectedWh}
                 onChange={(e) => handleSelectWarehouse(e.target.value)}
-                className={`w-full h-8 sm:h-9.5 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
+                className={`w-full min-h-8 sm:min-h-9.5 py-1 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
                   selectedWh !== 'ALL' ? 'border-indigo-400 text-indigo-700 bg-indigo-50/50' : 'border-slate-300 text-slate-800'
                 }`}
               >
@@ -963,7 +963,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
-                className={`w-full h-8 sm:h-9.5 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
+                className={`w-full min-h-8 sm:min-h-9.5 py-1 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
                   selectedCategory !== 'ALL' ? 'border-indigo-400 text-indigo-700 bg-indigo-50/50' : 'border-slate-300 text-slate-800'
                 }`}
               >
@@ -987,7 +987,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
               <select
                 value={selectedGrade}
                 onChange={(e) => setSelectedGrade(e.target.value)}
-                className={`w-full h-8 sm:h-9.5 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
+                className={`w-full min-h-8 sm:min-h-9.5 py-1 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
                   selectedGrade !== 'ALL' ? 'border-indigo-400 text-indigo-700 bg-indigo-50/50' : 'border-slate-300 text-slate-800'
                 }`}
               >
@@ -1006,7 +1006,7 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className={`w-full h-8 sm:h-9.5 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
+                className={`w-full min-h-8 sm:min-h-9.5 py-1 pl-2.5 sm:pl-3 pr-6 bg-slate-50 border rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all appearance-none cursor-pointer truncate ${
                   sortBy !== 'NAME_ASC' ? 'border-indigo-400 text-indigo-700 bg-indigo-50/50' : 'border-slate-300 text-slate-800'
                 }`}
               >
@@ -1140,15 +1140,15 @@ const ErpMaterialSearchViewComponent: React.FC<ErpMaterialSearchViewProps> = ({ 
                       <span className="text-slate-500 flex items-center gap-1 shrink-0">
                         <Boxes className="w-3.5 h-3.5 text-emerald-500" /> 현재고 수량
                       </span>
-                      <span className="font-mono font-black text-emerald-700 text-sm bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-lg">
+                      <span className="font-mono font-black text-emerald-700 text-sm bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-lg shrink-0 whitespace-nowrap">
                         {(item.currentStock || 0).toLocaleString()} {item.unit || 'EA'}
                       </span>
                     </div>
 
                     {/* 입고 단가 */}
                     <div className="flex items-center justify-between pt-0.5">
-                      <span className="text-slate-400">입고 단가</span>
-                      <span className="font-mono font-bold text-slate-700">
+                      <span className="text-slate-400 shrink-0">입고 단가</span>
+                      <span className="font-mono font-bold text-slate-700 shrink-0 whitespace-nowrap">
                         {item.unitPrice ? `${item.unitPrice.toLocaleString()}원` : '-'}
                       </span>
                     </div>

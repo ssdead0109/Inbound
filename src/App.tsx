@@ -974,17 +974,17 @@ export default function App() {
       {/* Mobile Bottom Navigation Bar with Safe Area Inset Support */}
       <div
         style={{ paddingBottom: 'max(20px, calc(0.6rem + env(safe-area-inset-bottom, 20px)))' }}
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 pt-2 px-2.5 flex items-center justify-around text-[10px] font-bold text-slate-500 shadow-2xl"
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 pt-1.5 px-1.5 flex items-center justify-around text-[10px] font-bold text-slate-500 shadow-2xl"
       >
         <button
           type="button"
           onClick={() => navigateToTab('SCANNER')}
-          className={`flex flex-col items-center justify-center space-y-1 transition-all relative cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
+          className={`flex-1 flex flex-col items-center justify-center space-y-0.5 transition-all relative cursor-pointer py-1 px-1 rounded-xl min-h-[46px] ${
             currentTab === 'SCANNER' || currentTab === 'PENDING' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
           }`}
         >
-          <ClipboardCheck className="w-5 h-5" />
-          <span>입고확인</span>
+          <ClipboardCheck className="w-5 h-5 shrink-0" />
+          <span className="whitespace-nowrap leading-tight">입고확인</span>
           {pendingCount > 0 && (
             <span className="absolute top-0.5 right-1 w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-mono font-bold shadow-xs">
               {pendingCount}
@@ -995,34 +995,34 @@ export default function App() {
         <button
           type="button"
           onClick={() => navigateToTab('HISTORY')}
-          className={`flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
+          className={`flex-1 flex flex-col items-center justify-center space-y-0.5 transition-all cursor-pointer py-1 px-1 rounded-xl min-h-[46px] ${
             currentTab === 'HISTORY' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
           }`}
         >
-          <History className="w-5 h-5" />
-          <span>입고내역</span>
+          <History className="w-5 h-5 shrink-0" />
+          <span className="whitespace-nowrap leading-tight">입고내역</span>
         </button>
 
         <button
           type="button"
           onClick={() => navigateToTab('PURCHASE_ORDERS')}
-          className={`flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
+          className={`flex-1 flex flex-col items-center justify-center space-y-0.5 transition-all cursor-pointer py-1 px-1 rounded-xl min-h-[46px] ${
             currentTab === 'PURCHASE_ORDERS' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
           }`}
         >
-          <FileText className="w-5 h-5 text-blue-500" />
-          <span>발주조회</span>
+          <FileText className="w-5 h-5 text-blue-500 shrink-0" />
+          <span className="whitespace-nowrap leading-tight">발주조회</span>
         </button>
 
         <button
           type="button"
           onClick={() => navigateToTab('ERP_SEARCH')}
-          className={`flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer py-1.5 px-3 rounded-xl min-h-[46px] ${
+          className={`flex-1 flex flex-col items-center justify-center space-y-0.5 transition-all cursor-pointer py-1 px-1 rounded-xl min-h-[46px] ${
             currentTab === 'ERP_SEARCH' ? 'text-indigo-600 font-bold bg-indigo-50/80' : 'hover:text-slate-900 active:scale-95'
           }`}
         >
-          <Database className="w-5 h-5 text-emerald-600" />
-          <span>자재조회</span>
+          <Database className="w-5 h-5 text-emerald-600 shrink-0" />
+          <span className="whitespace-nowrap leading-tight">자재조회</span>
         </button>
       </div>
 

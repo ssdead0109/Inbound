@@ -39,6 +39,71 @@
   line-height: 0.875rem !important;
 }
 
+/* ==========================================================================
+   Accessibility: Large Font Mode (공장 현장 어르신 및 작업자를 위한 큰글씨 모드)
+   ========================================================================== */
+html[data-font-size="large"] {
+  font-size: 114% !important; /* Base 16px -> ~18.25px */
+}
+
+html[data-font-size="xlarge"] {
+  font-size: 125% !important; /* Base 16px -> 20px */
+}
+
+/* Compensate fixed pixel classes in Large Mode */
+html[data-font-size="large"] [class*="text-[9px]"],
+html[data-font-size="large"] [class*="text-[10px]"] {
+  font-size: 0.75rem !important;
+  line-height: 1rem !important;
+}
+
+html[data-font-size="large"] [class*="text-[11px]"] {
+  font-size: 0.8125rem !important;
+  line-height: 1.125rem !important;
+}
+
+html[data-font-size="large"] [class*="text-[12px]"],
+html[data-font-size="large"] [class*="text-[13px]"] {
+  font-size: 0.875rem !important;
+  line-height: 1.25rem !important;
+}
+
+html[data-font-size="large"] .text-2xs {
+  font-size: 0.75rem !important;
+  line-height: 1rem !important;
+}
+
+/* Compensate fixed pixel classes in Extra Large Mode */
+html[data-font-size="xlarge"] [class*="text-[9px]"],
+html[data-font-size="xlarge"] [class*="text-[10px]"] {
+  font-size: 0.8125rem !important;
+  line-height: 1.125rem !important;
+}
+
+html[data-font-size="xlarge"] [class*="text-[11px]"] {
+  font-size: 0.875rem !important;
+  line-height: 1.25rem !important;
+}
+
+html[data-font-size="xlarge"] [class*="text-[12px]"],
+html[data-font-size="xlarge"] [class*="text-[13px]"] {
+  font-size: 0.9375rem !important;
+  line-height: 1.35rem !important;
+}
+
+html[data-font-size="xlarge"] .text-2xs {
+  font-size: 0.8125rem !important;
+  line-height: 1.125rem !important;
+}
+
+/* Prevent inputs and select dropdowns from clipping large text */
+html[data-font-size="large"] select,
+html[data-font-size="large"] input:not([type="checkbox"]):not([type="radio"]),
+html[data-font-size="xlarge"] select,
+html[data-font-size="xlarge"] input:not([type="checkbox"]):not([type="radio"]) {
+  min-height: 2.25rem !important;
+}
+
 @keyframes scanLaser {
   0% {
     top: 4%;
@@ -140,6 +205,7 @@
     padding: 0 !important;
     background: #ffffff !important;
     color: #000000 !important;
+    font-size: 11pt !important;
     height: auto !important;
     min-height: auto !important;
     overflow: visible !important;
