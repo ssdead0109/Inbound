@@ -191,12 +191,20 @@ html[data-font-size="xlarge"] input:not([type="checkbox"]):not([type="radio"]) {
   body.is-print-modal-active nav,
   body.is-print-modal-active footer,
   body.is-print-modal-active #app-header,
-  body.is-print-modal-active .no-print {
+  body.is-print-modal-active #mobile-bottom-nav,
+  body.is-print-modal-active .no-print,
+  body.is-print-modal-active .print\:hidden {
     display: none !important;
   }
 
   /* General hide rules */
-  header, nav, footer, .no-print {
+  header,
+  nav,
+  footer,
+  #app-header,
+  #mobile-bottom-nav,
+  .no-print,
+  .print\:hidden {
     display: none !important;
   }
 

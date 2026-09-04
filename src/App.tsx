@@ -971,10 +971,11 @@ export default function App() {
         </div>
       </main>
 
-      {/* Mobile Bottom Navigation Bar with Safe Area Inset Support */}
-      <div
+      {/* Mobile Bottom Navigation Bar with Safe Area Inset Support (Hidden on Print) */}
+      <nav
+        id="mobile-bottom-nav"
         style={{ paddingBottom: 'max(20px, calc(0.6rem + env(safe-area-inset-bottom, 20px)))' }}
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 pt-1.5 px-1.5 flex items-center justify-around text-[10px] font-bold text-slate-500 shadow-2xl"
+        className="md:hidden no-print print:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 pt-1.5 px-1.5 flex items-center justify-around text-[10px] font-bold text-slate-500 shadow-2xl"
       >
         <button
           type="button"
@@ -1024,10 +1025,12 @@ export default function App() {
           <Database className="w-5 h-5 text-emerald-600 shrink-0" />
           <span className="whitespace-nowrap leading-tight">자재조회</span>
         </button>
-      </div>
+      </nav>
 
-      {/* Floating Scroll-to-Top Action Button */}
-      <ScrollToTopButton />
+      {/* Floating Scroll-to-Top Action Button (Hidden on Print) */}
+      <div className="no-print print:hidden">
+        <ScrollToTopButton />
+      </div>
 
       {/* Printable Inbound Receipt Modal (for History tab) */}
       <InboundSlipPrintModal
@@ -1043,8 +1046,10 @@ export default function App() {
         onShowToast={showToast}
       />
 
-      {/* PWA Mobile App Installation Prompt Banner */}
-      <PWAInstallBanner />
+      {/* PWA Mobile App Installation Prompt Banner (Hidden on Print) */}
+      <div className="no-print print:hidden">
+        <PWAInstallBanner />
+      </div>
 
     </div>
   );
